@@ -2,5 +2,6 @@
 set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$root"
+bash scripts/test-module-version.sh
 cargo test --locked
 cargo test --locked --all-features

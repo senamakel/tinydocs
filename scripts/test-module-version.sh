@@ -4,9 +4,6 @@ set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 cd "$root"
 shell_pattern="$(sed -n "s/^semver_pattern='\(.*\)'$/\1/p" scripts/build-module.sh)"
-if [[ -z "$shell_pattern" ]]; then
-  shell_pattern="$(sed -n 's/.*"$version" =~ \(.*\) && -n.*/\1/p' scripts/build-module.sh)"
-fi
 powershell_pattern="$(sed -n "s/.*-notmatch '\(.*\)'.*/\1/p" scripts/build-module.ps1 | head -1)"
 # PowerShell uses an absolute end anchor because .NET's $ accepts a final newline.
 [[ "${powershell_pattern%\\z}" == "${shell_pattern%\$}" ]] || {
@@ -25,10 +22,10 @@ for version in "${invalid[@]}"; do
 done
 if command -v pwsh >/dev/null 2>&1; then
   for version in "${valid[@]}"; do
-    pwsh -NoProfile -Command 'if ($args[0] -notmatch $args[1]) { exit 1 }' "$version" "$powershell_pattern"
+    MODULE_TEST_VERSION="$version" MODULE_TEST_PATTERN="$powershell_pattern" pwsh -NoProfile -Command 'if ($env:MODULE_TEST_VERSION -notmatch $env:MODULE_TEST_PATTERN) { exit 1 }'
   done
   for version in "${invalid[@]}"; do
-    pwsh -NoProfile -Command 'if ($args[0] -match $args[1]) { exit 1 }' "$version" "$powershell_pattern"
+    MODULE_TEST_VERSION="$version" MODULE_TEST_PATTERN="$powershell_pattern" pwsh -NoProfile -Command 'if ($env:MODULE_TEST_VERSION -match $env:MODULE_TEST_PATTERN) { exit 1 }'
   done
 fi
 echo 'module version validation passed'

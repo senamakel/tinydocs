@@ -20,7 +20,9 @@ while (($#)); do
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
-[[ "$crate" == tinydocs-module && "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?$ && -n "$rust_target" && "$host" =~ ^[A-Za-z0-9_-]+$ ]] || {
+# SemVer 2.0: nonempty identifiers and no leading zeros in numeric versions.
+semver_pattern='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-((0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*))?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'
+[[ "$crate" == tinydocs-module && "$version" =~ $semver_pattern && -n "$rust_target" && "$host" =~ ^[A-Za-z0-9_-]+$ ]] || {
   echo "usage: build-module.sh --crate tinydocs-module --version VERSION --target TARGET --host HOST [--extra-files-json JSON] [--output-dir DIR]" >&2
   exit 2
 }
