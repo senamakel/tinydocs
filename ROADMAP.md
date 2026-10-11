@@ -11,7 +11,7 @@ out of scope. A roadmap that lists everything is a roadmap nobody trusts.
 - module layout, crate-wide error type, and the public re-export surface
 - lint configuration in `[lints]`, enforced identically locally and in CI
 - CI: format, clippy, build, test, rustdoc, MSRV, and supply-chain checks
-- a manual release workflow that versions, tags, and publishes to crates.io
+- a shared release workflow triggered by tags on reviewed version commits
 - a TinyBus-loadable native module exposing DOCX generation
 - installable Linux and macOS bundles with the TinyBus host, module allowlist,
   source packages, and protocol documentation on GitHub releases
