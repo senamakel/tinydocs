@@ -90,3 +90,7 @@ shape they imply.
 
 Do not report vulnerabilities through public issues. Follow the process in
 [SECURITY.md](SECURITY.md).
+
+## Releasing
+
+Change versions through a reviewed PR, then push a vX.Y.Z tag at the merged commit. Release can also be dispatched with an existing tag. The release workflow never pushes version bumps to main.
