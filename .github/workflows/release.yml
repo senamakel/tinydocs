@@ -8,8 +8,7 @@ on:
         required: true
   push:
     tags: ['v*']
-permissions:
-  contents: write
+permissions: {}
 concurrency:
   group: release-${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
   cancel-in-progress: false
@@ -32,11 +31,40 @@ jobs:
           }
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
-  module-release:
+  source-packages:
     needs: resolve
-    uses: tinyhumansai/.github/.github/workflows/module-release.yml@5ad0e00d8af6e89fc516015ccb13ab114b947be6
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ needs.resolve.outputs.tag }}
+          submodules: recursive
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249
+      - run: cargo package --locked --package tinydocs-bus
+      - name: Archive the pinned TinyBus SDK
+        run: |
+          set -euo pipefail
+          revision="$(git -C vendor/tinybus rev-parse --short=12 HEAD)"
+          git -C vendor/tinybus archive --format=tar.gz --prefix="tinybus-$revision/" \
+            --output="$PWD/target/package/tinybus-source-$revision.tar.gz" HEAD
+      - uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808
+        with:
+          name: source-packages
+          path: |
+            target/package/tinydocs-bus-*.crate
+            target/package/tinybus-source-*.tar.gz
+          if-no-files-found: error
+  module-release:
+    needs: [resolve, source-packages]
+    permissions:
+      contents: write
+    uses: tinyhumansai/.github/.github/workflows/module-release.yml@3e87ade76b622844985d0c665a3b075313e4545c
     with:
       tag: ${{ needs.resolve.outputs.tag }}
       version: ${{ needs.resolve.outputs.version }}
       module-crate: tinydocs-module
       extra-packaged-files: '["docs/specs/tinybus-module.md"]'
+      source-artifact: source-packages

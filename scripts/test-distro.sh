@@ -8,7 +8,7 @@ case "$image" in
   *) echo "unsupported module build image: $image" >&2; exit 2 ;;
 esac
 
-root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 crate="" version="" rust_target="" host="" output="release-assets" extras='[]'
 while (($#)); do
   case "$1" in

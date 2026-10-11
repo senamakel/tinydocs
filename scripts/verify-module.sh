@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 if [[ "${1:-}" == --archive ]]; then shift; fi
 archive="${1:?usage: verify-module.sh --archive <module-archive>}"
 archive="$(cd "$(dirname "$archive")" && pwd -P)/$(basename "$archive")"

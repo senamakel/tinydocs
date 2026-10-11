@@ -237,20 +237,22 @@ explicitly declined with a reason.
 
 ## Releases
 
-Releases run from `.github/workflows/release.yml` via a manual
-`workflow_dispatch` with a `patch` / `minor` / `major` bump. The workflow
-re-runs the full validation suite, computes the next version, updates
-`Cargo.toml` and `Cargo.lock`, commits and tags `vX.Y.Z`, packages, pushes, and
-publishes to crates.io using the `CARGO_REGISTRY_TOKEN` secret.
+Releases use the canonical TinyHumans shared workflow. Update the package
+versions and matching local dependency constraints in a PR, regenerate the
+lockfiles, and merge only after the required shared CI checks pass. For a
+workspace using version.workspace, change its root workspace.package version.
 
-Consequently:
+Create and push a vX.Y.Z tag at the merged commit, or dispatch Release with
+an existing tag input. The workflow checks that the tagged commit is on main
+and that its module version matches the tag. It builds and verifies all 17
+native and distro archives before publishing the immutable GitHub release.
+Release never commits or pushes version bumps to main.
 
-- Do not hand-edit the `version` field in `Cargo.toml`; the release workflow
-  owns it.
-- Follow semantic versioning. Any change to the public surface that is not
-  purely additive is a breaking change and needs a major bump (pre-1.0: a minor
-  bump).
-- The crate must be publishable at all times — `main` should always be green.
+Follow semantic versioning: breaking changes require a major bump, or a minor
+bump before 1.0. The module must remain packageable for every release target.
+
+TinyDocs also includes its bus-contract crate and pinned TinyBus SDK source
+packages in the same immutable release.
 
 ## Agent Working Agreement
 

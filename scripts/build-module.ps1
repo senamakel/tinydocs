@@ -10,7 +10,7 @@ $ErrorActionPreference = 'Stop'
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 Set-Location $root
 if ($Crate -ne 'tinydocs-module') { throw "Unsupported module crate: $Crate" }
-if ($Version -notmatch '^[0-9]+\.[0-9]+\.[0-9]+$') { throw "Invalid module version: $Version" }
+if ($Version -notmatch '^[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?$') { throw "Invalid module version: $Version" }
 if ($HostKey -notmatch '^[A-Za-z0-9_-]+$') { throw "Invalid release host key: $HostKey" }
 $pathSeparators = [char[]]@([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar)
 if ([IO.Path]::IsPathRooted($OutputDir) -or $OutputDir.Split($pathSeparators, [StringSplitOptions]::None) -contains '..') { throw 'Output directory must be a relative path inside the repository' }
