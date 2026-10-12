@@ -1,6 +1,7 @@
 //! The statically linked build is admitted by a `ModuleHost` and reaches `Ready`.
 
 #![cfg(feature = "static-link")]
+#![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use tinybus::{
     broker::Broker,
