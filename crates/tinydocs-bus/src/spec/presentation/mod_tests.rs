@@ -316,3 +316,46 @@ fn spec_defaults_optional_fields() {
     assert_eq!(s.theme, None);
     assert_eq!(s.slides.len(), 0);
 }
+
+#[test]
+fn slide_spec_new_matches_literal_and_pins_wire_shape() {
+    let image = SlideImage {
+        bytes: vec![1, 2, 3],
+        format: ImageFormat::Png,
+        width_px: 4,
+        height_px: 5,
+        caption: Some("cap".to_string()),
+    };
+    let built = SlideSpec::new(
+        "T",
+        Some("B".to_string()),
+        vec!["x".to_string()],
+        Some("N".to_string()),
+        vec![image.clone()],
+    );
+    let literal = SlideSpec {
+        title: "T".to_string(),
+        body: Some("B".to_string()),
+        bullets: vec!["x".to_string()],
+        speaker_notes: Some("N".to_string()),
+        images: vec![image],
+    };
+    assert_eq!(built, literal);
+    let value = serde_json::to_value(&built).unwrap();
+    let obj = value.as_object().unwrap();
+    let mut keys: Vec<_> = obj.keys().map(String::as_str).collect();
+    keys.sort_unstable();
+    assert_eq!(
+        keys,
+        ["body", "bullets", "images", "speaker_notes", "title"]
+    );
+    let img = value["images"][0].as_object().unwrap();
+    let mut ikeys: Vec<_> = img.keys().map(String::as_str).collect();
+    ikeys.sort_unstable();
+    assert_eq!(
+        ikeys,
+        ["bytes", "caption", "format", "height_px", "width_px"]
+    );
+    let back: SlideSpec = serde_json::from_value(value).unwrap();
+    assert_eq!(back, built);
+}
