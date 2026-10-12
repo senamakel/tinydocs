@@ -6,14 +6,7 @@ if [[ "${1:-}" == --archive ]]; then shift; fi
 archive="${1:?usage: verify-module.sh --archive <module-archive>}"
 archive="$(cd "$(dirname "$archive")" && pwd -P)/$(basename "$archive")"
 cd "$root"
-target_root="${CARGO_TARGET_DIR:-$root/target}"
-[[ "$target_root" == /* ]] || target_root="$root/$target_root"
-mkdir -p "$target_root"
-target_root="$(cd "$target_root" && pwd -P)"
-[[ "$target_root" == "$root"/* ]] || { echo "CARGO_TARGET_DIR must stay inside the repository" >&2; exit 2; }
-work="$target_root/tinydocs-module-verify-$$"
-rm -rf "$work"
-mkdir -p "$work"
+work="$(mktemp -d "${HOME:?HOME must be set to verify a module archive}/tinydocs-module-verify.XXXXXX")"
 trap 'rm -rf "$work"' EXIT
 case "$archive" in
   *.tar.gz)
