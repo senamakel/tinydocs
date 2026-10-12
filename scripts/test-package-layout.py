@@ -20,7 +20,9 @@ class PackageTests(unittest.TestCase):
             root = Path(directory); home = root / "home"; home.mkdir()
             archive = root / "module.tar.gz"
             with tarfile.open(archive, "w:gz") as package:
-                for name, data in [("libtinydocs_module.so", b"fixture"), ("modules.toml", b"fixture = true\n")]:
+                for name, data in [("libtinydocs_module.so", b"fixture"),
+                                   ("libtinydocs_module.dylib", b"fixture"),
+                                   ("modules.toml", b"fixture = true\n")]:
                     info = tarfile.TarInfo(name); info.size = len(data)
                     import io
                     package.addfile(info, io.BytesIO(data))
