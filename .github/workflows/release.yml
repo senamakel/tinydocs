@@ -1,227 +1,70 @@
 name: Release
-
 on:
   workflow_dispatch:
     inputs:
-      bump:
-        description: Version bump to release
-        type: choice
+      tag:
+        description: Existing version tag (vX.Y.Z) committed through a reviewed PR
+        type: string
         required: true
-        options:
-          - patch
-          - minor
-          - major
-
+  push:
+    tags: ['v*']
+permissions: {}
 concurrency:
-  group: release-${{ github.ref_name }}
+  group: release-${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
   cancel-in-progress: false
-
-permissions:
-  contents: write
-
 jobs:
-  publish:
-    name: Publish crate
-    if: ${{ github.ref == 'refs/heads/main' }}
+  resolve:
     runs-on: ubuntu-latest
-    environment: Production
     outputs:
-      crate_name: ${{ steps.version.outputs.crate_name }}
-      next_version: ${{ steps.version.outputs.next_version }}
-      tag: ${{ steps.version.outputs.tag }}
-      tinybus_version: ${{ steps.version.outputs.tinybus_version }}
+      tag: ${{ steps.tag.outputs.tag }}
+      version: ${{ steps.tag.outputs.version }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          fetch-depth: 0
-          submodules: true
-
-      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # stable
-        with:
-          components: rustfmt, clippy
-
-      - uses: taiki-e/install-action@70b10d055da4af0e46b2f7166e710204993798b3 # cargo-llvm-cov
-
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-
-      - name: Check formatting
-        run: cargo fmt --all -- --check
-
-      - name: Clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
-
-      - name: Test
-        run: cargo test --all-features
-
-      - name: Require 90% line coverage in every source file
-        run: .github/scripts/check-file-coverage.sh 90 target/coverage.json
-
-      - name: Build documentation
-        env:
-          RUSTDOCFLAGS: -D warnings
-        run: cargo doc --no-deps --all-features
-
-      - name: Compute next version
-        id: version
+      - id: tag
         shell: bash
-        run: |
-          set -euo pipefail
-
-          metadata="$(cargo metadata --format-version 1 --no-deps)"
-          crate_name="tinydocs"
-          current_version="$(jq -r '.packages[] | select(.name == "tinydocs") | .version' <<< "$metadata")"
-          tinybus_version="$(
-            cargo metadata \
-              --manifest-path vendor/tinybus/Cargo.toml \
-              --format-version 1 \
-              --no-deps \
-              | jq -r '.packages[] | select(.name == "tinybus") | .version'
-          )"
-          if [[ -z "$current_version" || "$current_version" == "null" ]]; then
-            echo "Could not resolve the current crate version" >&2
-            exit 1
-          fi
-          if [[ -z "$tinybus_version" || "$tinybus_version" == "null" ]]; then
-            echo "Could not resolve the TinyBus version" >&2
-            exit 1
-          fi
-
-          IFS=. read -r major minor patch <<< "$current_version"
-          case "${{ inputs.bump }}" in
-            major)
-              major=$((major + 1))
-              minor=0
-              patch=0
-              ;;
-            minor)
-              minor=$((minor + 1))
-              patch=0
-              ;;
-            patch)
-              patch=$((patch + 1))
-              ;;
-            *)
-              echo "Unsupported bump: ${{ inputs.bump }}" >&2
-              exit 1
-              ;;
-          esac
-
-          next_version="${major}.${minor}.${patch}"
-          tag="v${next_version}"
-
-          git fetch --tags origin
-          if git rev-parse --verify --quiet "refs/tags/${tag}"; then
-            echo "Tag ${tag} already exists" >&2
-            exit 1
-          fi
-
-          {
-            echo "crate_name=${crate_name}"
-            echo "current_version=${current_version}"
-            echo "next_version=${next_version}"
-            echo "tag=${tag}"
-            echo "tinybus_version=${tinybus_version}"
-          } >> "$GITHUB_OUTPUT"
-
-      - name: Update crate version
         env:
-          CRATE_NAME: ${{ steps.version.outputs.crate_name }}
-          NEXT_VERSION: ${{ steps.version.outputs.next_version }}
+          TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
         run: |
           set -euo pipefail
-          perl -0pi -e 's/(\[workspace\.package\][\s\S]*?\nversion = ")[^"]+(")/$1$ENV{NEXT_VERSION}$2/' Cargo.toml
-          # The library and its TinyBus contract ship from the same source tag.
-          # Raise the package dependency floor with that tag so packaged
-          # consumers cannot resolve an older contract without the new API.
-          perl -0pi -e 's/(tinydocs-bus = \{ version = ")[^"]+("[,}])/$1$ENV{NEXT_VERSION}$2/' Cargo.toml
-          grep -Fq "tinydocs-bus = { version = \"$NEXT_VERSION\", path = \"crates/tinydocs-bus\" }" Cargo.toml
-          cargo update -p tinydocs-bus --precise "$NEXT_VERSION"
-          cargo update -p "$CRATE_NAME" --precise "$NEXT_VERSION"
-
-      - name: Commit version bump and tag
-        env:
-          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?$ ]] || {
+            echo "tag must be v-prefixed semver" >&2
+            exit 2
+          }
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+  source-packages:
+    needs: resolve
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ needs.resolve.outputs.tag }}
+          submodules: recursive
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249
+      - run: cargo package --locked --package tinydocs-bus
+      - name: Archive the pinned TinyBus SDK
         run: |
           set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add Cargo.toml Cargo.lock
-          git commit -m "Release ${RELEASE_TAG}"
-          git tag -a "${RELEASE_TAG}" -m "Release ${RELEASE_TAG}"
-
-      # Neither crate is published to crates.io. Both are consumed as a git
-      # submodule by their hosts, and what a host actually loads is the module
-      # artifact this workflow builds further down, so a registry upload would
-      # be a third distribution channel nobody reads. The `cargo publish` steps
-      # that used to be here failed on a missing `CARGO_REGISTRY_TOKEN` and took
-      # the whole release with them — `native-bundles` needs this job to
-      # succeed, so a token nobody had gated every module artifact.
-      #
-      # `cargo package` stays for the bus contract: it is the check that the
-      # published manifest is packageable at all, and it is cheap. It cannot
-      # stay for `tinydocs`, which depends on `tinydocs-bus` by path — packaging
-      # rewrites a path dependency to a registry version and then looks it up,
-      # so it fails on a crate that by design will never be in the index.
-      - name: Package the bus contract
-        run: cargo package --locked --package tinydocs-bus
-
-      - name: Package TinyBus source and module SDK
-        run: |
-          set -euo pipefail
-          tinybus_revision="$(git -C vendor/tinybus rev-parse --short=12 HEAD)"
-          git -C vendor/tinybus archive \
-            --format=tar.gz \
-            --prefix="tinybus-${tinybus_revision}/" \
-            --output="$PWD/target/package/tinybus-source-${tinybus_revision}.tar.gz" \
-            HEAD
-
-      - name: Upload source packages
-        uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808 # v4.3.3
+          revision="$(git -C vendor/tinybus rev-parse --short=12 HEAD)"
+          git -C vendor/tinybus archive --format=tar.gz --prefix="tinybus-$revision/" \
+            --output="$PWD/target/package/tinybus-source-$revision.tar.gz" HEAD
+      - uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808
         with:
           name: source-packages
           path: |
-            target/package/tinydocs-bus-${{ steps.version.outputs.next_version }}.crate
+            target/package/tinydocs-bus-*.crate
             target/package/tinybus-source-*.tar.gz
           if-no-files-found: error
-
-      - name: Push release commit and tag
-        env:
-          RELEASE_TAG: ${{ steps.version.outputs.tag }}
-        run: |
-          set -euo pipefail
-          git push origin "HEAD:${GITHUB_REF_NAME}"
-          git push origin "${RELEASE_TAG}"
-
   module-release:
-    needs: publish
-    uses: tinyhumansai/.github/.github/workflows/module-release.yml@f4911b709333ee457da77e73b96aa9aec90d21ae
-    with:
-      tag: ${{ needs.publish.outputs.tag }}
-      version: ${{ needs.publish.outputs.next_version }}
-      module-crate: tinydocs-module
-      extra-packaged-files: '["docs/specs/tinybus-module.md"]'
-
-  source-release-assets:
-    name: Upload TinyDocs source packages
-    needs:
-      - publish
-      - module-release
-    runs-on: ubuntu-latest
+    needs: [resolve, source-packages]
     permissions:
       contents: write
-    steps:
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          name: source-packages
-          path: release-assets
-      - name: Attach source packages to the shared module release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ needs.publish.outputs.tag }}
-          REPOSITORY: ${{ github.repository }}
-        run: |
-          set -euo pipefail
-          mapfile -t release_files < <(find release-assets -type f | sort)
-          [[ ${#release_files[@]} -gt 0 ]]
-          gh release upload "$RELEASE_TAG" "${release_files[@]}" \
-            --repo "$REPOSITORY" --clobber
+    uses: tinyhumansai/.github/.github/workflows/module-release.yml@4adc1080fb495098e7af1aade82ed7e6e3c69bb7
+    with:
+      tag: ${{ needs.resolve.outputs.tag }}
+      version: ${{ needs.resolve.outputs.version }}
+      module-crate: tinydocs-module
+      extra-packaged-files: '["docs/specs/tinybus-module.md"]'
+      source-artifact: source-packages

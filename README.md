@@ -101,7 +101,7 @@ Bus-only hosts should dispatch `InspectImage` and use its `ImageFacts` result
 to populate the existing `SlideImage` fields alongside their original bytes.
 The serialized DTOs and existing bus argument counts are unchanged. The
 pre-1.0 workspace source API change requires a 0.2 minor release when packaged;
-version changes are handled by the release workflow.
+version changes are reviewed in a pull request before tagging the merged commit.
 
 ## The spec is separable from the codec
 

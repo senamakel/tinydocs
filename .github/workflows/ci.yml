@@ -2,6 +2,7 @@ name: CI
 
 on:
   push:
+    branches: [main]
   pull_request:
 
 permissions:
@@ -13,7 +14,7 @@ concurrency:
 
 jobs:
   module-ci:
-    uses: tinyhumansai/.github/.github/workflows/module-ci.yml@f4911b709333ee457da77e73b96aa9aec90d21ae # E2E/MSRV use root metadata; normalize manifest paths across OS
+    uses: tinyhumansai/.github/.github/workflows/module-ci.yml@4adc1080fb495098e7af1aade82ed7e6e3c69bb7
     with:
       coverage-script: scripts/check-coverage.sh
       module-e2e-script: scripts/test-e2e.sh

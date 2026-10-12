@@ -1,17 +1,15 @@
 # Roadmap
 
-Replace this file with the real plan for the crate generated from this
-template, or delete it if the project does not need a public roadmap.
-
-Keep it short and honest: what exists, what is next, and what is deliberately
-out of scope. A roadmap that lists everything is a roadmap nobody trusts.
+TinyDocs generates and reads documents through a Rust API and a TinyBus native
+module. This roadmap tracks shipped capabilities and the next document-transfer
+and format work.
 
 ## Shipped
 
 - module layout, crate-wide error type, and the public re-export surface
 - lint configuration in `[lints]`, enforced identically locally and in CI
 - CI: format, clippy, build, test, rustdoc, MSRV, and supply-chain checks
-- a manual release workflow that versions, tags, and publishes to crates.io
+- a shared release workflow triggered by tags on reviewed version commits
 - a TinyBus-loadable native module exposing DOCX generation
 - installable Linux and macOS bundles with the TinyBus host, module allowlist,
   source packages, and protocol documentation on GitHub releases

@@ -24,6 +24,21 @@ try {
     } finally {
         $zip.Dispose()
     }
+    # TinyBus only admits a Windows bundle private to the runner account.
+    $identity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
+    $security = [System.Security.AccessControl.DirectorySecurity]::new()
+    $security.SetOwner($identity.User)
+    $security.SetAccessRuleProtection($true, $false)
+    foreach ($sidValue in @($identity.User.Value, 'S-1-5-18', 'S-1-5-32-544')) {
+        $rule = [System.Security.AccessControl.FileSystemAccessRule]::new(
+            [System.Security.Principal.SecurityIdentifier]::new($sidValue),
+            [System.Security.AccessControl.FileSystemRights]::FullControl,
+            [System.Security.AccessControl.InheritanceFlags]'ContainerInherit, ObjectInherit',
+            [System.Security.AccessControl.PropagationFlags]::None,
+            [System.Security.AccessControl.AccessControlType]::Allow)
+        [void]$security.AddAccessRule($rule)
+    }
+    Set-Acl -LiteralPath $work -AclObject $security
     Expand-Archive -LiteralPath $resolvedArchive -DestinationPath $work
     $library = Join-Path $work 'tinydocs_module.dll'
     if (-not (Test-Path (Join-Path $work 'modules.toml'))) { throw 'modules.toml missing from archive' }

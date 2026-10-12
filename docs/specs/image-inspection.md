@@ -25,7 +25,7 @@ from the returned `ImageFacts` and the original bytes. The serialized image
 facts, `SlideImage` fields, and existing bus member argument counts remain
 unchanged. Since the bus crate is pre-1.0, release packaging for this source
 API change must advance the workspace package version to 0.2; this source
-change leaves package versions to the release workflow.
+change requires a reviewed version update before tagging the merged commit.
 
 Presentation generation keeps its existing single concatenated image stream,
 per-image bound, eight-image deck limit, and 40 MiB aggregate ceiling. This
