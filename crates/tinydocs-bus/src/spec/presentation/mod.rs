@@ -104,6 +104,27 @@ pub struct SlideSpec {
 }
 
 impl SlideSpec {
+    /// Builds a slide from its text fields and already-resolved images.
+    ///
+    /// Hosts resolve their own image sources (artifacts, workspace files)
+    /// under their own policy and hand the contract only the bytes.
+    #[must_use]
+    pub fn new(
+        title: impl Into<String>,
+        body: Option<String>,
+        bullets: Vec<String>,
+        speaker_notes: Option<String>,
+        images: Vec<SlideImage>,
+    ) -> Self {
+        Self {
+            title: title.into(),
+            body,
+            bullets,
+            speaker_notes,
+            images,
+        }
+    }
+
     /// Returns `true` when the slide carries no renderable text at all — the
     /// title, body, and every bullet are absent or blank.
     ///
