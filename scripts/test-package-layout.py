@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tarfile
 import tempfile
 import tomllib
@@ -20,9 +21,8 @@ class PackageTests(unittest.TestCase):
             root = Path(directory); home = root / "home"; home.mkdir()
             archive = root / "module.tar.gz"
             with tarfile.open(archive, "w:gz") as package:
-                for name, data in [("libtinydocs_module.so", b"fixture"),
-                                   ("libtinydocs_module.dylib", b"fixture"),
-                                   ("modules.toml", b"fixture = true\n")]:
+                library = "libtinydocs_module.dylib" if sys.platform == "darwin" else "libtinydocs_module.so"
+                for name, data in [(library, b"fixture"), ("modules.toml", b"fixture = true\n")]:
                     info = tarfile.TarInfo(name); info.size = len(data)
                     import io
                     package.addfile(info, io.BytesIO(data))
