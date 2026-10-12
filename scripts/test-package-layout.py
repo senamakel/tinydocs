@@ -13,6 +13,34 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 class PackageTests(unittest.TestCase):
+    def test_verifier_extracts_module_into_private_home(self):
+        """Nested Docker verification must own the extracted module directory."""
+        target = ROOT / "target"; target.mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=target) as directory:
+            root = Path(directory); home = root / "home"; home.mkdir()
+            archive = root / "module.tar.gz"
+            with tarfile.open(archive, "w:gz") as package:
+                for name, data in [("libtinydocs_module.so", b"fixture"), ("modules.toml", b"fixture = true\n")]:
+                    info = tarfile.TarInfo(name); info.size = len(data)
+                    import io
+                    package.addfile(info, io.BytesIO(data))
+            bin_dir = root / "bin"; bin_dir.mkdir()
+            cargo = bin_dir / "cargo"
+            cargo.write_text(
+                "#!/usr/bin/env python3\nimport os,sys\nfrom pathlib import Path\n"
+                "library=Path(os.environ.get('TINYDOCS_TEST_MODULE') or sys.argv[sys.argv.index('--')+1]).resolve()\n"
+                "assert library.is_file(), library\n"
+                "assert library.is_relative_to(Path.home().resolve()), library\n"
+            )
+            cargo.chmod(0o755)
+            env = dict(os.environ, HOME=str(home), PATH=str(bin_dir) + os.pathsep + os.environ["PATH"])
+            env.pop("CARGO_TARGET_DIR", None)
+            result = subprocess.run(
+                ["bash", str(ROOT / "scripts/verify-module.sh"), "--archive", str(archive)],
+                cwd=ROOT, env=env, text=True, capture_output=True, check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_arch_package_install_disables_only_landlock_filesystem_sandbox(self):
         """Pacman gets the filesystem-only sandbox exception in nested Arch builds."""
         target = ROOT / "target"; target.mkdir(exist_ok=True)
