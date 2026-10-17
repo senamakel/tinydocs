@@ -2084,6 +2084,7 @@ dependencies = [
  "tinybus",
  "tinydocs-bus",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
