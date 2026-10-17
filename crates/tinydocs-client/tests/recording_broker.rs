@@ -617,10 +617,16 @@ async fn held_outputs_are_chunked_in_order_verified_and_released() {
         fixture.client.generate_docx(&document_spec()).await,
         Err(DocumentCallError::Failed(_))
     ));
-    let calls = &fixture.state.lock().expect("fixture state lock").calls;
-    assert!(!calls.iter().any(|call| call.member == methods::READ_OUTPUT));
+    let state = fixture.state.lock().expect("fixture state lock");
     assert!(
-        calls
+        !state
+            .calls
+            .iter()
+            .any(|call| call.member == methods::READ_OUTPUT)
+    );
+    assert!(
+        state
+            .calls
             .iter()
             .any(|call| call.member == methods::RELEASE_OUTPUT)
     );
@@ -633,7 +639,8 @@ async fn held_outputs_are_chunked_in_order_verified_and_released() {
             if matches!(mode, ReadMode::Overlong) {
                 state.generated_bytes = vec![0x33; CHUNK_BYTES as usize + 16];
                 state.declared_size = Some(CHUNK_BYTES);
-                state.declared_digest = Some(digest(&state.generated_bytes));
+                let declared_digest = digest(&state.generated_bytes);
+                state.declared_digest = Some(declared_digest);
             }
         }
         assert!(matches!(
@@ -710,7 +717,7 @@ async fn cancellation_releases_held_output_and_render_releases_every_page() {
         .expect("selected pages are collected");
     assert_eq!(
         rendered.iter().map(|(page, _)| *page).collect::<Vec<_>>(),
-        [1, 3]
+        vec![1, 3]
     );
     assert!(
         fixture
