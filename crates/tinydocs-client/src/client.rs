@@ -1,4 +1,4 @@
-//! Typed calls and held-output transfer for the TinyDocs module.
+//! Typed calls and held-output transfer for the `TinyDocs` module.
 
 use std::fmt::{Debug, Formatter};
 
@@ -20,7 +20,7 @@ const READ_CHUNK_BYTES: u64 = 1024 * 1024;
 const MAX_DOCUMENT_BYTES: u64 = 64 * 1024 * 1024;
 const INVALID_INPUT_WIRE_NAME: &str = "ai.tinyhumans.tinydocs.Error.InvalidInput";
 
-/// Typed client for the TinyDocs module.
+/// Typed client for the `TinyDocs` module.
 ///
 /// The embedding host supplies its process-owned [`ModuleClient`], which keeps
 /// module loading, readiness, timeouts, and failure reporting outside this
@@ -39,7 +39,7 @@ impl Debug for TinyDocsClient {
 }
 
 impl TinyDocsClient {
-    /// Create a TinyDocs client over the host's module client.
+    /// Create a `TinyDocs` client over the host's module client.
     #[must_use]
     pub fn new(module: ModuleClient) -> Self {
         Self { module }
@@ -49,7 +49,7 @@ impl TinyDocsClient {
     ///
     /// # Errors
     ///
-    /// Returns [`DocumentCallError`] when TinyDocs is unavailable, rejects the
+    /// Returns [`DocumentCallError`] when `TinyDocs` is unavailable, rejects the
     /// specification, or fails to generate or transfer the output.
     pub async fn generate_docx(&self, spec: &DocumentSpec) -> Result<Vec<u8>, DocumentCallError> {
         let output = self.output_client().await?;
@@ -69,7 +69,7 @@ impl TinyDocsClient {
     ///
     /// # Errors
     ///
-    /// Returns [`DocumentCallError`] when TinyDocs is unavailable, rejects the
+    /// Returns [`DocumentCallError`] when `TinyDocs` is unavailable, rejects the
     /// deck, or fails to generate or transfer the output.
     pub async fn generate_pptx(
         &self,
@@ -180,7 +180,7 @@ impl TinyDocsClient {
     /// # Errors
     ///
     /// Returns [`DocumentCallError::InvalidInput`] for empty or oversized image
-    /// data, and another [`DocumentCallError`] when TinyDocs cannot inspect it.
+    /// data, and another [`DocumentCallError`] when `TinyDocs` cannot inspect it.
     pub async fn inspect_image(&self, image: &[u8]) -> Result<ImageFacts, DocumentCallError> {
         if image.is_empty() || image.len() > MAX_IMAGE_BYTES {
             return Err(DocumentCallError::InvalidInput(format!(
@@ -200,7 +200,7 @@ impl TinyDocsClient {
 
     /// Render selected pages of a PDF and collect every returned PNG.
     ///
-    /// The result preserves the page order declared by TinyDocs.
+    /// The result preserves the page order declared by `TinyDocs`.
     ///
     /// # Errors
     ///
@@ -285,7 +285,7 @@ impl Drop for OutputReleaseGuard {
                 {
                     Ok(()) => {}
                     Err(_) => {
-                        tracing::debug!(module = MODULE_ID, "releasing a TinyDocs output failed")
+                        tracing::debug!(module = MODULE_ID, "releasing a TinyDocs output failed");
                     }
                 }
             }
@@ -307,7 +307,7 @@ async fn collect(
         .await
         .is_err()
     {
-        tracing::debug!(module = MODULE_ID, "releasing a TinyDocs output failed")
+        tracing::debug!(module = MODULE_ID, "releasing a TinyDocs output failed");
     }
     release.ids.clear();
     result
@@ -325,7 +325,8 @@ async fn read_all(
     }
 
     let capacity = usize::try_from(handle.total_bytes).unwrap_or(0);
-    let mut bytes = Vec::with_capacity(capacity.min(MAX_DOCUMENT_BYTES as usize));
+    let max_capacity = usize::try_from(MAX_DOCUMENT_BYTES).unwrap_or(usize::MAX);
+    let mut bytes = Vec::with_capacity(capacity.min(max_capacity));
     while (bytes.len() as u64) < handle.total_bytes {
         let encoded: String = output
             .call_detailed(

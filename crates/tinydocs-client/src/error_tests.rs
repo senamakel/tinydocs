@@ -1,4 +1,4 @@
-//! Formatting behavior for TinyDocs errors, including message redaction.
+//! Formatting behavior for `TinyDocs` errors, including message redaction.
 
 use super::*;
 

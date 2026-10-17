@@ -1,4 +1,4 @@
-//! Focused classification and digest tests for the TinyDocs client.
+//! Focused classification and digest tests for the `TinyDocs` client.
 
 use super::*;
 

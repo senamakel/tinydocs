@@ -1,8 +1,8 @@
-//! TinyDocs call errors kept distinct for the host's tool and reporting layers.
+//! `TinyDocs` call errors kept distinct for the host's tool and reporting layers.
 
 use std::fmt::{Debug, Display, Formatter};
 
-/// Why a TinyDocs operation did not produce its requested result.
+/// Why a `TinyDocs` operation did not produce its requested result.
 ///
 /// Remote text is retained for an explicit caller policy, but [`Debug`] and
 /// [`Display`] never include it. Module-provided text is untrusted and may
@@ -11,7 +11,7 @@ use std::fmt::{Debug, Display, Formatter};
 pub enum DocumentCallError {
     /// The module is unavailable or cannot serve this contract.
     Unavailable(String),
-    /// TinyDocs rejected caller-provided input.
+    /// `TinyDocs` rejected caller-provided input.
     InvalidInput(String),
     /// The operation or its output transfer failed.
     Failed(String),
@@ -29,7 +29,7 @@ impl Debug for DocumentCallError {
 }
 
 impl DocumentCallError {
-    /// Return the untrusted message received from TinyDocs, when one exists.
+    /// Return the untrusted message received from `TinyDocs`, when one exists.
     ///
     /// Apply an explicit product redaction policy before displaying, storing,
     /// or logging this text. [`Debug`] and [`Display`] use only the error
