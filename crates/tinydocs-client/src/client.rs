@@ -19,7 +19,6 @@ use crate::DocumentCallError;
 const MODULE_ID: &str = "tinydocs";
 const READ_CHUNK_BYTES: u64 = 1024 * 1024;
 const MAX_DOCUMENT_BYTES: u64 = 64 * 1024 * 1024;
-const RELEASE_TIMEOUT: Duration = Duration::from_secs(5);
 const INVALID_INPUT_WIRE_NAME: &str = "ai.tinyhumans.tinydocs.Error.InvalidInput";
 
 /// Typed client for the TinyDocs module.
@@ -281,14 +280,12 @@ impl Drop for OutputReleaseGuard {
         let ids = std::mem::take(&mut self.ids);
         runtime.spawn(async move {
             for output_id in ids {
-                match tokio::time::timeout(
-                    RELEASE_TIMEOUT,
-                    output.call_detailed::<()>(methods::RELEASE_OUTPUT, (output_id,)),
-                )
-                .await
+                match output
+                    .call_detailed::<()>(methods::RELEASE_OUTPUT, (output_id,))
+                    .await
                 {
                     Ok(Ok(())) => {}
-                    Ok(Err(_)) | Err(_) => {
+                    Err(_) => {
                         tracing::debug!(module = MODULE_ID, "releasing a TinyDocs output failed")
                     }
                 }
@@ -306,12 +303,11 @@ async fn collect(
         ids: vec![handle.output_id.clone()],
     };
     let result = read_all(output, &handle).await;
-    let release_result = tokio::time::timeout(
-        RELEASE_TIMEOUT,
-        output.call_detailed::<()>(methods::RELEASE_OUTPUT, (handle.output_id.clone(),)),
-    )
-    .await;
-    if !matches!(release_result, Ok(Ok(()))) {
+    if output
+        .call_detailed::<()>(methods::RELEASE_OUTPUT, (handle.output_id.clone(),))
+        .await
+        .is_err()
+    {
         tracing::debug!(module = MODULE_ID, "releasing a TinyDocs output failed")
     }
     release.ids.clear();
