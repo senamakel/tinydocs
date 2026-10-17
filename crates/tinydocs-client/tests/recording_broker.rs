@@ -512,6 +512,27 @@ async fn module_wire_failures_keep_invalid_input_distinct_from_execution_failure
         .state
         .lock()
         .expect("fixture state lock")
+        .faults
+        .insert(
+            methods::READ_OUTPUT.to_string(),
+            (
+                "ai.tinyhumans.tinydocs.Error.InvalidInput".into(),
+                "output range is invalid".into(),
+            ),
+        );
+    assert!(matches!(
+        fixture.client.generate_docx(&document_spec()).await,
+        Err(DocumentCallError::InvalidInput(_))
+    ));
+    let state = fixture.state.lock().expect("fixture state lock");
+    assert!(state.calls.iter().any(|call| call.member == methods::RELEASE_OUTPUT));
+    assert!(state.outputs.is_empty());
+
+    let fixture = fixture().await;
+    fixture
+        .state
+        .lock()
+        .expect("fixture state lock")
         .malformed_replies
         .insert(
             methods::EXTRACT_DOCUMENT.to_string(),
