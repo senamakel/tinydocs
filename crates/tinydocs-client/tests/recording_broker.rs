@@ -11,7 +11,7 @@ use sha2::{Digest, Sha256};
 use tinybus::broker::Broker;
 use tinybus::module::{
     AccessFuture, FailureReport, FailureReporter, FailureSink, ModuleAccess, ModuleClient,
-    ProxyFailure, Reason, ReleaseRecord,
+    ProxyFailure, ReleaseRecord,
 };
 use tinybus::service::Interface;
 use tinybus::transport::memory::MemoryBus;
@@ -321,7 +321,7 @@ struct Fixture {
     _broker: tokio::task::JoinHandle<tinybus::Result<()>>,
 }
 
-async fn fixture() -> Fixture {
+async fn test_fixture() -> Fixture {
     let bus = MemoryBus::new();
     let broker = Broker::new().spawn(bus.clone());
     let server = Connection::connect(bus.connect().await.expect("server transport"))
@@ -383,7 +383,7 @@ fn document_spec() -> DocumentSpec {
 
 #[tokio::test]
 async fn typed_operations_use_contract_members_and_stream_document_bytes() {
-    let fixture = fixture().await;
+    let fixture = test_fixture().await;
     let input = b"incoming PDF bytes";
 
     let generated = fixture
@@ -466,7 +466,7 @@ async fn typed_operations_use_contract_members_and_stream_document_bytes() {
 
 #[tokio::test]
 async fn module_wire_failures_keep_invalid_input_distinct_from_execution_failure() {
-    let fixture = fixture().await;
+    let fixture = test_fixture().await;
     fixture
         .state
         .lock()
@@ -522,7 +522,7 @@ async fn module_wire_failures_keep_invalid_input_distinct_from_execution_failure
         Err(DocumentCallError::Unavailable(_))
     ));
 
-    let fixture = fixture().await;
+    let fixture = test_fixture().await;
     fixture
         .state
         .lock()
@@ -546,7 +546,7 @@ async fn module_wire_failures_keep_invalid_input_distinct_from_execution_failure
         Err(DocumentCallError::InvalidInput(_))
     ));
 
-    let fixture = fixture().await;
+    let fixture = test_fixture().await;
     fixture
         .state
         .lock()
@@ -564,7 +564,7 @@ async fn module_wire_failures_keep_invalid_input_distinct_from_execution_failure
         Err(DocumentCallError::Failed(_))
     ));
 
-    let fixture = fixture().await;
+    let fixture = test_fixture().await;
     fixture
         .state
         .lock()
@@ -590,7 +590,7 @@ async fn module_wire_failures_keep_invalid_input_distinct_from_execution_failure
     );
     assert!(state.outputs.is_empty());
 
-    let fixture = fixture().await;
+    let fixture = test_fixture().await;
     fixture
         .state
         .lock()
@@ -610,7 +610,7 @@ async fn module_wire_failures_keep_invalid_input_distinct_from_execution_failure
 
 #[tokio::test]
 async fn held_outputs_are_chunked_in_order_verified_and_released() {
-    let fixture = fixture().await;
+    let fixture = test_fixture().await;
     let bytes = vec![0x5a; (CHUNK_BYTES * 2 + 13) as usize];
     {
         let mut state = fixture.state.lock().expect("fixture state lock");
@@ -642,7 +642,7 @@ async fn held_outputs_are_chunked_in_order_verified_and_released() {
             .is_empty()
     );
 
-    let fixture = fixture().await;
+    let fixture = test_fixture().await;
     {
         let mut state = fixture.state.lock().expect("fixture state lock");
         state.generated_bytes = b"digest must reject this output".to_vec();
@@ -661,7 +661,7 @@ async fn held_outputs_are_chunked_in_order_verified_and_released() {
     );
     assert!(state.outputs.is_empty());
 
-    let fixture = fixture().await;
+    let fixture = test_fixture().await;
     fixture
         .state
         .lock()
@@ -686,7 +686,7 @@ async fn held_outputs_are_chunked_in_order_verified_and_released() {
     );
 
     for mode in [ReadMode::Empty, ReadMode::InvalidBase64, ReadMode::Overlong] {
-        let fixture = fixture().await;
+        let fixture = test_fixture().await;
         {
             let mut state = fixture.state.lock().expect("fixture state lock");
             state.read_mode = mode;
@@ -715,7 +715,7 @@ async fn held_outputs_are_chunked_in_order_verified_and_released() {
 
 #[tokio::test]
 async fn cancellation_releases_held_output_and_render_releases_every_page() {
-    let fixture = fixture().await;
+    let fixture = test_fixture().await;
     fixture
         .state
         .lock()
@@ -755,7 +755,7 @@ async fn cancellation_releases_held_output_and_render_releases_every_page() {
             .is_empty()
     );
 
-    let fixture = fixture().await;
+    let fixture = test_fixture().await;
     let rendered = fixture
         .client
         .render_pdf(
