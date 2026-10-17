@@ -198,9 +198,7 @@ impl RecordingService {
         let stream_index = match member {
             methods::GENERATE_PPTX if !args[1].is_null() => Some(1),
             methods::EXTRACT_TEXT | methods::INSPECT_IMAGE => Some(0),
-            methods::EXTRACT_DOCUMENT | methods::CONVERT_MARKDOWN | methods::RENDER_PDF => {
-                Some(1)
-            }
+            methods::EXTRACT_DOCUMENT | methods::CONVERT_MARKDOWN | methods::RENDER_PDF => Some(1),
             _ => None,
         };
         if let Some(index) = stream_index {
@@ -240,7 +238,9 @@ impl RecordingService {
             }
             methods::EXTRACT_TEXT => {
                 self.read_stream_arg(&args, 0, member).await?;
-                Ok(serde_json::to_value(self.hold_for(member, b"extracted text"))?)
+                Ok(serde_json::to_value(
+                    self.hold_for(member, b"extracted text"),
+                )?)
             }
             methods::EXTRACT_DOCUMENT => {
                 self.read_stream_arg(&args, 1, member).await?;
@@ -258,7 +258,9 @@ impl RecordingService {
             }
             methods::CONVERT_MARKDOWN => {
                 self.read_stream_arg(&args, 1, member).await?;
-                Ok(serde_json::to_value(self.hold_for(member, b"# converted\n"))?)
+                Ok(serde_json::to_value(
+                    self.hold_for(member, b"# converted\n"),
+                )?)
             }
             methods::INSPECT_IMAGE => {
                 self.read_stream_arg(&args, 0, member).await?;
@@ -327,9 +329,7 @@ impl Interface for RecordingService {
             return self.return_fault(&member, &args, (name, message)).await;
         }
         if let Some(reply) = self.malformed_reply(&member) {
-            return self
-                .return_malformed_reply(&member, &args, reply)
-                .await;
+            return self.return_malformed_reply(&member, &args, reply).await;
         }
         self.dispatch_member(&member, args).await
     }
@@ -595,14 +595,16 @@ async fn text_outputs_must_be_utf8_and_release_errors_do_not_discard_good_bytes(
                 .map(|_| ())
         };
         assert!(matches!(result, Err(DocumentCallError::Failed(_))));
-        let state = fixture.state.lock().expect("fixture state lock");
-        assert!(state.outputs.is_empty());
-        assert!(
-            state
-                .calls
-                .iter()
-                .any(|call| call.member == methods::RELEASE_OUTPUT)
-        );
+        {
+            let state = fixture.state.lock().expect("fixture state lock");
+            assert!(state.outputs.is_empty());
+            assert!(
+                state
+                    .calls
+                    .iter()
+                    .any(|call| call.member == methods::RELEASE_OUTPUT)
+            );
+        }
     }
 
     let fixture = test_fixture().await;
