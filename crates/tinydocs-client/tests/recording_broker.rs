@@ -2,6 +2,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use async_trait::async_trait;
 use base64::Engine as _;
@@ -100,6 +101,8 @@ struct State {
     read_started: Arc<Notify>,
     release_seen: Arc<Notify>,
     resume_read: Arc<Notify>,
+    release_started: Arc<Notify>,
+    release_delay: Option<Duration>,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -275,6 +278,14 @@ impl Interface for RecordingService {
             methods::READ_OUTPUT => self.read_output(&args).await,
             methods::RELEASE_OUTPUT => {
                 let output_id = args[0].as_str().expect("output id string");
+                let (release_delay, release_started) = {
+                    let state = self.state.lock().expect("fixture state lock");
+                    (state.release_delay, state.release_started.clone())
+                };
+                if let Some(delay) = release_delay {
+                    release_started.notify_one();
+                    tokio::time::sleep(delay).await;
+                }
                 self.state
                     .lock()
                     .expect("fixture state lock")
@@ -339,10 +350,18 @@ struct Fixture {
 }
 
 async fn test_fixture() -> Fixture {
-    test_fixture_with_enabled(true).await
+    test_fixture_with_options(true, None).await
 }
 
 async fn test_fixture_with_enabled(enabled: bool) -> Fixture {
+    test_fixture_with_options(enabled, None).await
+}
+
+async fn test_fixture_with_timeout(timeout: Duration) -> Fixture {
+    test_fixture_with_options(true, Some(timeout)).await
+}
+
+async fn test_fixture_with_options(enabled: bool, timeout: Option<Duration>) -> Fixture {
     let bus = MemoryBus::new();
     let broker = Broker::new().spawn(bus.clone());
     let server = Connection::connect(bus.connect().await.expect("server transport"))
@@ -372,12 +391,15 @@ async fn test_fixture_with_enabled(enabled: bool) -> Fixture {
     let proxy = client_connection
         .proxy(BUS_NAME, OBJECT_PATH, BUS_NAME)
         .expect("fixture proxy");
-    let sdk_client = ModuleClient::new(FixtureAccess {
+    let mut sdk_client = ModuleClient::new(FixtureAccess {
         connection: client_connection.clone(),
         reporter: FailureReporter::new(Arc::new(NoopSink)),
         enabled,
     })
     .with_fixture(proxy);
+    if let Some(timeout) = timeout {
+        sdk_client = sdk_client.with_timeout(timeout);
+    }
 
     Fixture {
         client: TinyDocsClient::new(sdk_client),
@@ -572,6 +594,108 @@ async fn text_outputs_must_be_utf8_and_release_errors_do_not_discard_good_bytes(
             .await
             .expect("a release failure does not invalidate collected bytes"),
         b"docx bytes"
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn output_release_waits_for_the_module_clients_configured_deadline() {
+    let fixture = test_fixture_with_timeout(Duration::from_secs(10)).await;
+    let release_started = fixture
+        .state
+        .lock()
+        .expect("fixture state lock")
+        .release_started
+        .clone();
+    fixture
+        .state
+        .lock()
+        .expect("fixture state lock")
+        .release_delay = Some(Duration::from_secs(6));
+
+    let client = fixture.client.clone();
+    let call = tokio::spawn(async move { client.generate_docx(&document_spec()).await });
+    release_started.notified().await;
+    tokio::time::advance(Duration::from_millis(5_100)).await;
+    tokio::task::yield_now().await;
+    assert!(
+        !call.is_finished(),
+        "ordinary output release must honor the configured ten-second module deadline"
+    );
+
+    tokio::time::advance(Duration::from_secs(1)).await;
+    assert_eq!(
+        call.await
+            .expect("client task joins")
+            .expect("output is collected"),
+        b"docx bytes"
+    );
+    assert!(
+        fixture
+            .state
+            .lock()
+            .expect("fixture state lock")
+            .outputs
+            .is_empty()
+    );
+}
+
+#[tokio::test]
+async fn credential_like_normal_invalid_input_is_redacted_from_formatted_errors() {
+    let fixture = test_fixture().await;
+    let remote_text = "credential-like-token-DoNotDisplay";
+    fixture
+        .state
+        .lock()
+        .expect("fixture state lock")
+        .faults
+        .insert(
+            methods::GENERATE_DOCX.to_string(),
+            (
+                "ai.tinyhumans.tinydocs.Error.InvalidInput".into(),
+                remote_text.into(),
+            ),
+        );
+    let error = fixture
+        .client
+        .generate_docx(&document_spec())
+        .await
+        .expect_err("invalid input is returned");
+    assert!(matches!(error, DocumentCallError::InvalidInput(_)));
+    assert!(!error.to_string().contains(remote_text));
+    assert!(!format!("{error:?}").contains(remote_text));
+}
+
+#[tokio::test]
+async fn credential_like_held_output_error_is_redacted_from_formatted_errors() {
+    let fixture = test_fixture().await;
+    let remote_text = "credential-like-output-token-DoNotDisplay";
+    fixture
+        .state
+        .lock()
+        .expect("fixture state lock")
+        .faults
+        .insert(
+            methods::READ_OUTPUT.to_string(),
+            (
+                "ai.tinyhumans.tinydocs.Error.InvalidInput".into(),
+                remote_text.into(),
+            ),
+        );
+    let error = fixture
+        .client
+        .generate_docx(&document_spec())
+        .await
+        .expect_err("held output error is returned");
+    assert!(matches!(error, DocumentCallError::InvalidInput(_)));
+    assert!(!error.to_string().contains(remote_text));
+    assert!(!format!("{error:?}").contains(remote_text));
+    assert!(
+        fixture
+            .state
+            .lock()
+            .expect("fixture state lock")
+            .outputs
+            .is_empty()
     );
 }
 
