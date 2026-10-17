@@ -930,14 +930,16 @@ async fn held_outputs_are_chunked_in_order_verified_and_released() {
         fixture.client.generate_docx(&document_spec()).await,
         Err(DocumentCallError::Failed(_))
     ));
-    let state = fixture.state.lock().expect("fixture state lock");
-    assert!(
-        state
-            .calls
-            .iter()
-            .any(|call| call.member == methods::RELEASE_OUTPUT)
-    );
-    assert!(state.outputs.is_empty());
+    {
+        let state = fixture.state.lock().expect("fixture state lock");
+        assert!(
+            state
+                .calls
+                .iter()
+                .any(|call| call.member == methods::RELEASE_OUTPUT)
+        );
+        assert!(state.outputs.is_empty());
+    }
 
     let fixture = test_fixture().await;
     fixture
@@ -949,19 +951,21 @@ async fn held_outputs_are_chunked_in_order_verified_and_released() {
         fixture.client.generate_docx(&document_spec()).await,
         Err(DocumentCallError::Failed(_))
     ));
-    let state = fixture.state.lock().expect("fixture state lock");
-    assert!(
-        !state
-            .calls
-            .iter()
-            .any(|call| call.member == methods::READ_OUTPUT)
-    );
-    assert!(
-        state
-            .calls
-            .iter()
-            .any(|call| call.member == methods::RELEASE_OUTPUT)
-    );
+    {
+        let state = fixture.state.lock().expect("fixture state lock");
+        assert!(
+            !state
+                .calls
+                .iter()
+                .any(|call| call.member == methods::READ_OUTPUT)
+        );
+        assert!(
+            state
+                .calls
+                .iter()
+                .any(|call| call.member == methods::RELEASE_OUTPUT)
+        );
+    }
 
     for mode in [ReadMode::Empty, ReadMode::InvalidBase64, ReadMode::Overlong] {
         let fixture = test_fixture().await;
