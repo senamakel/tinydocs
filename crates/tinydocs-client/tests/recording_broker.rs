@@ -782,7 +782,7 @@ async fn cancellation_releases_held_output_and_render_releases_every_page() {
             .is_empty()
     );
 
-    let fixture = fixture().await;
+    let fixture = test_fixture().await;
     fixture.state.lock().expect("fixture state lock").read_mode = ReadMode::InvalidBase64;
     assert!(matches!(
         fixture
