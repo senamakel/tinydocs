@@ -12,6 +12,11 @@ use `ModuleObjectClient::call_detailed` so their wire errors retain the same
 contract distinctions. The host continues to own module loading and transport
 lifecycle.
 
+`DocumentCallError` keeps unavailable, invalid-input, and execution failures
+distinct. Its `Debug` and `Display` forms expose only the category. A caller
+that needs TinyDocs' input detail can opt into `raw_message()` and apply its own
+redaction policy before surfacing that untrusted text.
+
 Variable-size results use the contract's held-output protocol. The client
 reads bounded base64 chunks, checks the declared length and SHA-256 digest, and
 releases each output after success or failure. Cancellation schedules the
