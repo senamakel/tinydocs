@@ -661,6 +661,7 @@ async fn credential_like_normal_invalid_input_is_redacted_from_formatted_errors(
         .await
         .expect_err("invalid input is returned");
     assert!(matches!(error, DocumentCallError::InvalidInput(_)));
+    assert_eq!(error.raw_message(), remote_text);
     assert!(!error.to_string().contains(remote_text));
     assert!(!format!("{error:?}").contains(remote_text));
 }
@@ -687,6 +688,7 @@ async fn credential_like_held_output_error_is_redacted_from_formatted_errors() {
         .await
         .expect_err("held output error is returned");
     assert!(matches!(error, DocumentCallError::InvalidInput(_)));
+    assert_eq!(error.raw_message(), remote_text);
     assert!(!error.to_string().contains(remote_text));
     assert!(!format!("{error:?}").contains(remote_text));
     assert!(

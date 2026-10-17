@@ -4,9 +4,9 @@ use std::fmt::{Debug, Display, Formatter};
 
 /// Why a TinyDocs operation did not produce its requested result.
 ///
-/// Remote text is retained in the value for an intentional caller-facing error
-/// path. Its [`Debug`] form redacts the text so diagnostics do not accidentally
-/// include module-provided data.
+/// Remote text is retained for an explicit caller policy, but [`Debug`] and
+/// [`Display`] never include it. Module-provided text is untrusted and may
+/// contain caller input or credentials.
 #[derive(Clone, PartialEq, Eq)]
 pub enum DocumentCallError {
     /// The module is unavailable or cannot serve this contract.
@@ -28,14 +28,30 @@ impl Debug for DocumentCallError {
     }
 }
 
-impl Display for DocumentCallError {
-    fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
-        let message = match self {
+impl DocumentCallError {
+    /// Return the untrusted message received from TinyDocs, when one exists.
+    ///
+    /// Apply an explicit product redaction policy before displaying, storing,
+    /// or logging this text. [`Debug`] and [`Display`] use only the error
+    /// category and never include this value.
+    #[must_use]
+    pub fn raw_message(&self) -> &str {
+        match self {
             Self::Unavailable(message) | Self::InvalidInput(message) | Self::Failed(message) => {
                 message
             }
+        }
+    }
+}
+
+impl Display for DocumentCallError {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
+        let category = match self {
+            Self::Unavailable(_) => "unavailable",
+            Self::InvalidInput(_) => "input rejected",
+            Self::Failed(_) => "execution failed",
         };
-        formatter.write_str(message)
+        write!(formatter, "MODULE_CALL_REPORTED: module {category}")
     }
 }
 

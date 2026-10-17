@@ -1,7 +1,6 @@
 //! Typed calls and held-output transfer for the TinyDocs module.
 
 use std::fmt::{Debug, Formatter};
-use std::time::Duration;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
@@ -284,7 +283,7 @@ impl Drop for OutputReleaseGuard {
                     .call_detailed::<()>(methods::RELEASE_OUTPUT, (output_id,))
                     .await
                 {
-                    Ok(Ok(())) => {}
+                    Ok(()) => {}
                     Err(_) => {
                         tracing::debug!(module = MODULE_ID, "releasing a TinyDocs output failed")
                     }

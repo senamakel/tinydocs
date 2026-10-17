@@ -3,7 +3,7 @@
 use super::*;
 
 #[test]
-fn debug_redacts_every_module_message_but_display_keeps_the_intended_input_reason() {
+fn debug_and_display_redact_module_messages_but_raw_message_is_explicitly_available() {
     let errors = [
         DocumentCallError::Unavailable("module secret".to_string()),
         DocumentCallError::InvalidInput("field must be present".to_string()),
@@ -11,13 +11,15 @@ fn debug_redacts_every_module_message_but_display_keeps_the_intended_input_reaso
     ];
     for error in errors {
         let debug = format!("{error:?}");
+        let display = error.to_string();
         assert!(debug.contains("<redacted>"));
         assert!(!debug.contains("secret"));
         assert!(!debug.contains("present"));
         assert!(!debug.contains("remote detail"));
+        assert!(!display.contains("secret"));
+        assert!(!display.contains("present"));
+        assert!(!display.contains("remote detail"));
     }
-    assert_eq!(
-        DocumentCallError::InvalidInput("field must be present".to_string()).to_string(),
-        "field must be present"
-    );
+    let invalid = DocumentCallError::InvalidInput("field must be present".to_string());
+    assert_eq!(invalid.raw_message(), "field must be present");
 }
