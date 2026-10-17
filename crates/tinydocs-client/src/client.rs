@@ -1,14 +1,13 @@
 //! Typed calls and held-output transfer for the TinyDocs module.
 
+use std::fmt::{Debug, Formatter};
 use std::time::Duration;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use sha2::{Digest, Sha256};
-use tinybus::module::{
-    ModuleCallError, ModuleCallFailure, ModuleClient, ModuleObjectClient,
-};
-use tinydocs_bus::names::{BUS_NAME, OBJECT_PATH, methods};
+use tinybus::module::{ModuleCallError, ModuleCallFailure, ModuleClient, ModuleObjectClient};
+use tinydocs_bus::names::{OBJECT_PATH, methods};
 use tinydocs_bus::spec::presentation::MAX_IMAGE_BYTES;
 use tinydocs_bus::{
     DocumentFormat, DocumentSpec, ExtractDocumentSpec, ExtractedDocument, ImageFacts, OutputRef,
@@ -33,6 +32,14 @@ pub struct TinyDocsClient {
     module: ModuleClient,
 }
 
+impl Debug for TinyDocsClient {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("TinyDocsClient")
+            .finish_non_exhaustive()
+    }
+}
+
 impl TinyDocsClient {
     /// Create a TinyDocs client over the host's module client.
     #[must_use]
@@ -46,10 +53,7 @@ impl TinyDocsClient {
     ///
     /// Returns [`DocumentCallError`] when TinyDocs is unavailable, rejects the
     /// specification, or fails to generate or transfer the output.
-    pub async fn generate_docx(
-        &self,
-        spec: &DocumentSpec,
-    ) -> Result<Vec<u8>, DocumentCallError> {
+    pub async fn generate_docx(&self, spec: &DocumentSpec) -> Result<Vec<u8>, DocumentCallError> {
         let output = self.output_client().await?;
         let handle: OutputRef = self
             .module
@@ -331,7 +335,11 @@ async fn read_all(
         let encoded: String = output
             .call_detailed(
                 methods::READ_OUTPUT,
-                (handle.output_id.clone(), bytes.len() as u64, READ_CHUNK_BYTES),
+                (
+                    handle.output_id.clone(),
+                    bytes.len() as u64,
+                    READ_CHUNK_BYTES,
+                ),
             )
             .await
             .map_err(classify_failure)?;

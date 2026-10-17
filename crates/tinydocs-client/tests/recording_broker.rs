@@ -44,6 +44,7 @@ impl FailureSink for NoopSink {
 struct FixtureAccess {
     connection: Connection,
     reporter: FailureReporter,
+    enabled: bool,
 }
 
 impl ModuleAccess for FixtureAccess {
@@ -52,7 +53,7 @@ impl ModuleAccess for FixtureAccess {
     }
 
     fn enabled(&self) -> bool {
-        true
+        self.enabled
     }
 
     fn reporter(&self) -> &FailureReporter {
@@ -87,6 +88,7 @@ struct State {
     calls: Vec<Call>,
     input_streams: BTreeMap<String, Vec<u8>>,
     outputs: HashMap<String, Vec<u8>>,
+    output_overrides: HashMap<String, Vec<u8>>,
     generated_bytes: Vec<u8>,
     next_output: usize,
     faults: HashMap<String, (String, String)>,
@@ -131,6 +133,17 @@ impl RecordingService {
             total_bytes,
             sha256,
         }
+    }
+
+    fn hold_for(&self, member: &str, fallback: &[u8]) -> OutputRef {
+        let bytes = self
+            .state
+            .lock()
+            .expect("fixture state lock")
+            .output_overrides
+            .remove(member)
+            .unwrap_or_else(|| fallback.to_vec());
+        self.hold(bytes)
     }
 
     async fn read_stream_arg(
@@ -219,7 +232,9 @@ impl Interface for RecordingService {
             }
             methods::EXTRACT_TEXT => {
                 self.read_stream_arg(&args, 0, &member).await?;
-                Ok(serde_json::to_value(self.hold(b"extracted text".to_vec()))?)
+                Ok(serde_json::to_value(
+                    self.hold_for(&member, b"extracted text"),
+                )?)
             }
             methods::EXTRACT_DOCUMENT => {
                 self.read_stream_arg(&args, 1, &member).await?;
@@ -237,7 +252,9 @@ impl Interface for RecordingService {
             }
             methods::CONVERT_MARKDOWN => {
                 self.read_stream_arg(&args, 1, &member).await?;
-                Ok(serde_json::to_value(self.hold(b"# converted\n".to_vec()))?)
+                Ok(serde_json::to_value(
+                    self.hold_for(&member, b"# converted\n"),
+                )?)
             }
             methods::INSPECT_IMAGE => {
                 self.read_stream_arg(&args, 0, &member).await?;
@@ -322,6 +339,10 @@ struct Fixture {
 }
 
 async fn test_fixture() -> Fixture {
+    test_fixture_with_enabled(true).await
+}
+
+async fn test_fixture_with_enabled(enabled: bool) -> Fixture {
     let bus = MemoryBus::new();
     let broker = Broker::new().spawn(bus.clone());
     let server = Connection::connect(bus.connect().await.expect("server transport"))
@@ -354,6 +375,7 @@ async fn test_fixture() -> Fixture {
     let sdk_client = ModuleClient::new(FixtureAccess {
         connection: client_connection.clone(),
         reporter: FailureReporter::new(Arc::new(NoopSink)),
+        enabled,
     })
     .with_fixture(proxy);
 
@@ -461,6 +483,95 @@ async fn typed_operations_use_contract_members_and_stream_document_bytes() {
             .calls
             .iter()
             .any(|call| { call.member == methods::GENERATE_PPTX && call.args[1].is_null() })
+    );
+}
+
+#[tokio::test]
+async fn disabled_modules_are_unavailable_and_local_image_bounds_send_no_call() {
+    let fixture = test_fixture_with_enabled(false).await;
+    assert!(matches!(
+        fixture.client.generate_docx(&document_spec()).await,
+        Err(DocumentCallError::Unavailable(_))
+    ));
+    assert!(
+        fixture
+            .state
+            .lock()
+            .expect("fixture state lock")
+            .calls
+            .is_empty()
+    );
+
+    let fixture = test_fixture().await;
+    assert!(matches!(
+        fixture.client.inspect_image(&[]).await,
+        Err(DocumentCallError::InvalidInput(_))
+    ));
+    let oversized = vec![0; tinydocs_bus::spec::presentation::MAX_IMAGE_BYTES + 1];
+    assert!(matches!(
+        fixture.client.inspect_image(&oversized).await,
+        Err(DocumentCallError::InvalidInput(_))
+    ));
+    assert!(
+        fixture
+            .state
+            .lock()
+            .expect("fixture state lock")
+            .calls
+            .is_empty()
+    );
+}
+
+#[tokio::test]
+async fn text_outputs_must_be_utf8_and_release_errors_do_not_discard_good_bytes() {
+    for member in [methods::EXTRACT_TEXT, methods::CONVERT_MARKDOWN] {
+        let fixture = test_fixture().await;
+        fixture
+            .state
+            .lock()
+            .expect("fixture state lock")
+            .output_overrides
+            .insert(member.to_string(), vec![0xff]);
+        let result = if member == methods::EXTRACT_TEXT {
+            fixture.client.extract_text(b"PDF bytes").await.map(|_| ())
+        } else {
+            fixture
+                .client
+                .convert_markdown(DocumentFormat::Pdf, b"PDF bytes")
+                .await
+                .map(|_| ())
+        };
+        assert!(matches!(result, Err(DocumentCallError::Failed(_))));
+        let state = fixture.state.lock().expect("fixture state lock");
+        assert!(state.outputs.is_empty());
+        assert!(
+            state
+                .calls
+                .iter()
+                .any(|call| call.member == methods::RELEASE_OUTPUT)
+        );
+    }
+
+    let fixture = test_fixture().await;
+    fixture
+        .state
+        .lock()
+        .expect("fixture state lock")
+        .faults
+        .insert(
+            methods::RELEASE_OUTPUT.to_string(),
+            (
+                "ai.tinyhumans.tinydocs.Error.UnknownOutput".into(),
+                "already expired".into(),
+            ),
+        );
+    assert_eq!(
+        fixture
+            .client
+            .generate_docx(&document_spec())
+            .await
+            .expect("a release failure does not invalidate collected bytes"),
+        b"docx bytes"
     );
 }
 

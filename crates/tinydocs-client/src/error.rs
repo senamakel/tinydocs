@@ -40,3 +40,7 @@ impl Display for DocumentCallError {
 }
 
 impl std::error::Error for DocumentCallError {}
+
+#[cfg(test)]
+#[path = "error_tests.rs"]
+mod tests;
