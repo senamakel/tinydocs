@@ -19,7 +19,10 @@ redaction policy before surfacing that untrusted text.
 
 Variable-size results use the contract's held-output protocol. The client
 reads bounded base64 chunks, checks the declared length and SHA-256 digest, and
-releases each output after success or failure. Cancellation schedules the
-release through the caller's Tokio runtime. The contract and behavior are
-exercised by `tests/recording_broker.rs`, which serves a local recording
-interface over TinyBus's in-memory broker and never contacts a live module.
+releases each output after success or failure. On cancellation, it makes a
+best-effort release call on the caller's Tokio runtime. If the runtime is
+already gone or that call cannot be delivered, the client cannot guarantee
+that the module has physically reclaimed the output; module-side expiry remains
+the fallback. The contract and behavior are exercised by
+`tests/recording_broker.rs`, which serves a local recording interface over
+TinyBus's in-memory broker and never contacts a live module.
