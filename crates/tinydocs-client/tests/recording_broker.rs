@@ -10,13 +10,13 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use tinybus::broker::Broker;
 use tinybus::module::{
-    AccessFuture, FailureReport, FailureReporter, FailureSink, ModuleAccess, ModuleCallError,
-    ModuleClient, ProxyFailure, Reason, ReleaseRecord,
+    AccessFuture, FailureReport, FailureReporter, FailureSink, ModuleAccess, ModuleClient,
+    ProxyFailure, Reason, ReleaseRecord,
 };
 use tinybus::service::Interface;
 use tinybus::transport::memory::MemoryBus;
 use tinybus::{Connection, Error, InterfaceName, MemberName, ObjectPath, Proxy};
-use tinydocs_bus::names::{BUS_NAME, OBJECT_PATH, METHODS, methods};
+use tinydocs_bus::names::{BUS_NAME, METHODS, OBJECT_PATH, methods};
 use tinydocs_bus::{DocumentFormat, DocumentSpec, ExtractDocumentSpec, OutputRef, RenderPdfSpec};
 use tinydocs_client::{DocumentCallError, TinyDocsClient};
 use tokio::sync::Notify;
@@ -90,12 +90,14 @@ struct State {
     generated_bytes: Vec<u8>,
     next_output: usize,
     faults: HashMap<String, (String, String)>,
+    malformed_replies: HashMap<String, Value>,
     declared_size: Option<u64>,
     declared_digest: Option<String>,
     read_mode: ReadMode,
     block_reads: bool,
     read_started: Arc<Notify>,
     release_seen: Arc<Notify>,
+    resume_read: Arc<Notify>,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -131,7 +133,12 @@ impl RecordingService {
         }
     }
 
-    async fn read_stream_arg(&self, args: &Value, index: usize, member: &str) -> tinybus::Result<()> {
+    async fn read_stream_arg(
+        &self,
+        args: &Value,
+        index: usize,
+        member: &str,
+    ) -> tinybus::Result<()> {
         let stream: tinybus::stream::StreamRef = serde_json::from_value(args[index].clone())?;
         let bytes = self.connection.read_stream(&stream).await?;
         self.state
@@ -168,6 +175,19 @@ impl Interface for RecordingService {
         };
         if let Some((name, message)) = fault {
             return Err(Error::MethodFailed { name, message });
+        }
+        let malformed = self
+            .state
+            .lock()
+            .expect("fixture state lock")
+            .malformed_replies
+            .get(&member)
+            .cloned();
+        if let Some(reply) = malformed {
+            if member == methods::EXTRACT_DOCUMENT {
+                self.read_stream_arg(&args, 1, &member).await?;
+            }
+            return Ok(reply);
         }
 
         match member.as_str() {
@@ -236,7 +256,7 @@ impl Interface for RecordingService {
                     .lock()
                     .expect("fixture state lock")
                     .release_seen
-                    .notify_waiters();
+                    .notify_one();
                 Ok(Value::Null)
             }
             unknown => Err(Error::MethodFailed {
@@ -252,24 +272,19 @@ impl RecordingService {
         let output_id = args[0].as_str().expect("output id string").to_string();
         let offset = args[1].as_u64().expect("output offset");
         let requested = args[2].as_u64().expect("requested length");
-        let (mode, block, started, bytes) = {
+        let (mode, block, started, resume, bytes) = {
             let state = self.state.lock().expect("fixture state lock");
             (
                 state.read_mode,
                 state.block_reads,
                 state.read_started.clone(),
+                state.resume_read.clone(),
                 state.outputs.get(&output_id).cloned().unwrap_or_default(),
             )
         };
         if block {
             started.notify_one();
-            let released = self
-                .state
-                .lock()
-                .expect("fixture state lock")
-                .release_seen
-                .clone();
-            released.notified().await;
+            resume.notified().await;
         }
         let value = match mode {
             ReadMode::Empty => String::new(),
@@ -278,7 +293,10 @@ impl RecordingService {
                 let start = usize::try_from(offset).unwrap_or(usize::MAX);
                 let wanted = usize::try_from(requested).unwrap_or(usize::MAX);
                 let extra = usize::from(matches!(mode, ReadMode::Overlong));
-                let end = start.saturating_add(wanted).saturating_add(extra).min(bytes.len());
+                let end = start
+                    .saturating_add(wanted)
+                    .saturating_add(extra)
+                    .min(bytes.len());
                 BASE64.encode(bytes.get(start..end).unwrap_or_default())
             }
         };
@@ -298,7 +316,9 @@ async fn fixture() -> Fixture {
     let server = Connection::connect(bus.connect().await.expect("server transport"))
         .await
         .expect("server connection");
-    let state = Arc::new(Mutex::new(State::default()));
+    let mut initial_state = State::default();
+    initial_state.generated_bytes = b"docx bytes".to_vec();
+    let state = Arc::new(Mutex::new(initial_state));
     server
         .serve_at(
             ObjectPath::new(OBJECT_PATH).expect("valid TinyDocs path"),
@@ -309,7 +329,10 @@ async fn fixture() -> Fixture {
         )
         .await
         .expect("serve recording module");
-    server.request_name(BUS_NAME).await.expect("claim module name");
+    server
+        .request_name(BUS_NAME)
+        .await
+        .expect("claim module name");
 
     let client_connection = Connection::connect(bus.connect().await.expect("client transport"))
         .await
@@ -324,7 +347,7 @@ async fn fixture() -> Fixture {
     .with_fixture(proxy);
 
     Fixture {
-        client: TinyDocsClient::new(sdk_client, client_connection),
+        client: TinyDocsClient::new(sdk_client),
         state,
         _broker: broker,
     }
@@ -375,7 +398,11 @@ async fn typed_operations_use_contract_members_and_stream_document_bytes() {
         b"pptx bytes"
     );
     assert_eq!(
-        fixture.client.extract_text(input).await.expect("text is read"),
+        fixture
+            .client
+            .extract_text(input)
+            .await
+            .expect("text is read"),
         "extracted text"
     );
     assert_eq!(
@@ -389,10 +416,7 @@ async fn typed_operations_use_contract_members_and_stream_document_bytes() {
 
     let extracted = fixture
         .client
-        .extract_document(
-            input,
-            &ExtractDocumentSpec::new(DocumentFormat::Pdf),
-        )
+        .extract_document(input, &ExtractDocumentSpec::new(DocumentFormat::Pdf))
         .await
         .expect("typed extraction succeeds");
     assert_eq!(extracted.sections[0].text, "section text");
@@ -472,12 +496,22 @@ async fn module_wire_failures_keep_invalid_input_distinct_from_execution_failure
         Err(DocumentCallError::Unavailable(_))
     ));
 
-    let _sdk_outcome_vocabulary_is_closed = [
-        ModuleCallError::Unavailable,
-        ModuleCallError::IncompatibleContract,
-        ModuleCallError::TransportFailed,
-        ModuleCallError::ModuleFault,
-    ];
+    let fixture = fixture().await;
+    fixture
+        .state
+        .lock()
+        .expect("fixture state lock")
+        .malformed_replies
+        .insert(
+            methods::EXTRACT_DOCUMENT.to_string(),
+            json!({"truncated": "wrong type"}),
+        );
+    let error = fixture
+        .client
+        .extract_document(b"PDF bytes", &ExtractDocumentSpec::new(DocumentFormat::Pdf))
+        .await
+        .expect_err("a malformed typed reply is rejected");
+    assert!(matches!(error, DocumentCallError::Failed(_)));
 }
 
 #[tokio::test]
@@ -505,12 +539,33 @@ async fn held_outputs_are_chunked_in_order_verified_and_released() {
         .map(|call| call.args[1].as_u64().expect("read offset"))
         .collect::<Vec<_>>();
     assert_eq!(offsets, [0, CHUNK_BYTES, CHUNK_BYTES * 2]);
-    assert!(fixture
-        .state
-        .lock()
-        .expect("fixture state lock")
-        .outputs
-        .is_empty());
+    assert!(
+        fixture
+            .state
+            .lock()
+            .expect("fixture state lock")
+            .outputs
+            .is_empty()
+    );
+
+    let fixture = fixture().await;
+    {
+        let mut state = fixture.state.lock().expect("fixture state lock");
+        state.generated_bytes = b"digest must reject this output".to_vec();
+        state.declared_digest = Some("0".repeat(64));
+    }
+    assert!(matches!(
+        fixture.client.generate_docx(&document_spec()).await,
+        Err(DocumentCallError::Failed(_))
+    ));
+    let state = fixture.state.lock().expect("fixture state lock");
+    assert!(
+        state
+            .calls
+            .iter()
+            .any(|call| call.member == methods::RELEASE_OUTPUT)
+    );
+    assert!(state.outputs.is_empty());
 
     let fixture = fixture().await;
     fixture
@@ -524,7 +579,11 @@ async fn held_outputs_are_chunked_in_order_verified_and_released() {
     ));
     let calls = &fixture.state.lock().expect("fixture state lock").calls;
     assert!(!calls.iter().any(|call| call.member == methods::READ_OUTPUT));
-    assert!(calls.iter().any(|call| call.member == methods::RELEASE_OUTPUT));
+    assert!(
+        calls
+            .iter()
+            .any(|call| call.member == methods::RELEASE_OUTPUT)
+    );
 
     for mode in [ReadMode::Empty, ReadMode::InvalidBase64, ReadMode::Overlong] {
         let fixture = fixture().await;
@@ -541,20 +600,26 @@ async fn held_outputs_are_chunked_in_order_verified_and_released() {
             fixture.client.generate_docx(&document_spec()).await,
             Err(DocumentCallError::Failed(_))
         ));
-        assert!(fixture
-            .state
-            .lock()
-            .expect("fixture state lock")
-            .calls
-            .iter()
-            .any(|call| call.member == methods::RELEASE_OUTPUT));
+        assert!(
+            fixture
+                .state
+                .lock()
+                .expect("fixture state lock")
+                .calls
+                .iter()
+                .any(|call| call.member == methods::RELEASE_OUTPUT)
+        );
     }
 }
 
 #[tokio::test]
 async fn cancellation_releases_held_output_and_render_releases_every_page() {
     let fixture = fixture().await;
-    fixture.state.lock().expect("fixture state lock").block_reads = true;
+    fixture
+        .state
+        .lock()
+        .expect("fixture state lock")
+        .block_reads = true;
     let started = fixture
         .state
         .lock()
@@ -573,12 +638,20 @@ async fn cancellation_releases_held_output_and_render_releases_every_page() {
     call.abort();
     let _ = call.await;
     release_seen.notified().await;
-    assert!(fixture
+    fixture
         .state
         .lock()
         .expect("fixture state lock")
-        .outputs
-        .is_empty());
+        .resume_read
+        .notify_one();
+    assert!(
+        fixture
+            .state
+            .lock()
+            .expect("fixture state lock")
+            .outputs
+            .is_empty()
+    );
 
     let fixture = fixture().await;
     let rendered = fixture
@@ -594,11 +667,16 @@ async fn cancellation_releases_held_output_and_render_releases_every_page() {
         )
         .await
         .expect("selected pages are collected");
-    assert_eq!(rendered.iter().map(|(page, _)| *page).collect::<Vec<_>>(), [1, 3]);
-    assert!(fixture
-        .state
-        .lock()
-        .expect("fixture state lock")
-        .outputs
-        .is_empty());
+    assert_eq!(
+        rendered.iter().map(|(page, _)| *page).collect::<Vec<_>>(),
+        [1, 3]
+    );
+    assert!(
+        fixture
+            .state
+            .lock()
+            .expect("fixture state lock")
+            .outputs
+            .is_empty()
+    );
 }
