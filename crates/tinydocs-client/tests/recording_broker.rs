@@ -1,4 +1,9 @@
-//! Product-facing TinyDocs client tests over an in-process recording broker.
+#![expect(
+    clippy::expect_used,
+    reason = "fixture assertions should stop immediately on broken broker setup"
+)]
+
+//! Product-facing `TinyDocs` client tests over an in-process recording broker.
 
 use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, Mutex};
@@ -24,6 +29,7 @@ use tokio::sync::Notify;
 
 const MODULE_ID: &str = "tinydocs";
 const CHUNK_BYTES: u64 = 1024 * 1024;
+const CHUNK_BYTES_USIZE: usize = 1024 * 1024;
 const MAX_DOCUMENT_BYTES: u64 = 64 * 1024 * 1024;
 
 static RECORD: ReleaseRecord = ReleaseRecord {
@@ -164,60 +170,59 @@ impl RecordingService {
             .insert(member.to_string(), bytes);
         Ok(())
     }
-}
 
-#[async_trait]
-impl Interface for RecordingService {
-    fn name(&self) -> InterfaceName {
-        InterfaceName::new(BUS_NAME).expect("valid TinyDocs interface")
+    fn record_call(&self, member: &str, args: &Value) -> Option<(String, String)> {
+        let mut state = self.state.lock().expect("fixture state lock");
+        state.calls.push(Call {
+            member: member.to_string(),
+            args: args.clone(),
+        });
+        state.faults.get(member).cloned()
     }
 
-    fn members(&self) -> Vec<MemberName> {
-        METHODS
-            .iter()
-            .map(|member| MemberName::new(*member).expect("valid TinyDocs member"))
-            .collect()
-    }
-
-    async fn call(&self, member: &MemberName, args: Value) -> tinybus::Result<Value> {
-        let member = member.as_str().to_string();
-        let fault = {
-            let mut state = self.state.lock().expect("fixture state lock");
-            state.calls.push(Call {
-                member: member.clone(),
-                args: args.clone(),
-            });
-            state.faults.get(&member).cloned()
-        };
-        if let Some((name, message)) = fault {
-            let stream_index = match member.as_str() {
-                methods::GENERATE_PPTX if !args[1].is_null() => Some(1),
-                methods::EXTRACT_TEXT | methods::INSPECT_IMAGE => Some(0),
-                methods::EXTRACT_DOCUMENT | methods::CONVERT_MARKDOWN | methods::RENDER_PDF => {
-                    Some(1)
-                }
-                _ => None,
-            };
-            if let Some(index) = stream_index {
-                self.read_stream_arg(&args, index, &member).await?;
-            }
-            return Err(Error::MethodFailed { name, message });
-        }
-        let malformed = self
-            .state
+    fn malformed_reply(&self, member: &str) -> Option<Value> {
+        self.state
             .lock()
             .expect("fixture state lock")
             .malformed_replies
-            .get(&member)
-            .cloned();
-        if let Some(reply) = malformed {
-            if member == methods::EXTRACT_DOCUMENT {
-                self.read_stream_arg(&args, 1, &member).await?;
-            }
-            return Ok(reply);
-        }
+            .get(member)
+            .cloned()
+    }
 
-        match member.as_str() {
+    async fn return_fault(
+        &self,
+        member: &str,
+        args: &Value,
+        (name, message): (String, String),
+    ) -> tinybus::Result<Value> {
+        let stream_index = match member {
+            methods::GENERATE_PPTX if !args[1].is_null() => Some(1),
+            methods::EXTRACT_TEXT | methods::INSPECT_IMAGE => Some(0),
+            methods::EXTRACT_DOCUMENT | methods::CONVERT_MARKDOWN | methods::RENDER_PDF => {
+                Some(1)
+            }
+            _ => None,
+        };
+        if let Some(index) = stream_index {
+            self.read_stream_arg(args, index, member).await?;
+        }
+        Err(Error::MethodFailed { name, message })
+    }
+
+    async fn return_malformed_reply(
+        &self,
+        member: &str,
+        args: &Value,
+        reply: Value,
+    ) -> tinybus::Result<Value> {
+        if member == methods::EXTRACT_DOCUMENT {
+            self.read_stream_arg(args, 1, member).await?;
+        }
+        Ok(reply)
+    }
+
+    async fn dispatch_member(&self, member: &str, args: Value) -> tinybus::Result<Value> {
+        match member {
             methods::GENERATE_DOCX => {
                 let bytes = self
                     .state
@@ -229,18 +234,16 @@ impl Interface for RecordingService {
             }
             methods::GENERATE_PPTX => {
                 if !args[1].is_null() {
-                    self.read_stream_arg(&args, 1, &member).await?;
+                    self.read_stream_arg(&args, 1, member).await?;
                 }
                 Ok(serde_json::to_value(self.hold(b"pptx bytes".to_vec()))?)
             }
             methods::EXTRACT_TEXT => {
-                self.read_stream_arg(&args, 0, &member).await?;
-                Ok(serde_json::to_value(
-                    self.hold_for(&member, b"extracted text"),
-                )?)
+                self.read_stream_arg(&args, 0, member).await?;
+                Ok(serde_json::to_value(self.hold_for(member, b"extracted text"))?)
             }
             methods::EXTRACT_DOCUMENT => {
-                self.read_stream_arg(&args, 1, &member).await?;
+                self.read_stream_arg(&args, 1, member).await?;
                 Ok(json!({
                     "format": "pdf",
                     "section_count": 1,
@@ -254,17 +257,15 @@ impl Interface for RecordingService {
                 }))
             }
             methods::CONVERT_MARKDOWN => {
-                self.read_stream_arg(&args, 1, &member).await?;
-                Ok(serde_json::to_value(
-                    self.hold_for(&member, b"# converted\n"),
-                )?)
+                self.read_stream_arg(&args, 1, member).await?;
+                Ok(serde_json::to_value(self.hold_for(member, b"# converted\n"))?)
             }
             methods::INSPECT_IMAGE => {
-                self.read_stream_arg(&args, 0, &member).await?;
+                self.read_stream_arg(&args, 0, member).await?;
                 Ok(json!({ "format": "PNG", "width_px": 2, "height_px": 3 }))
             }
             methods::RENDER_PDF => {
-                self.read_stream_arg(&args, 1, &member).await?;
+                self.read_stream_arg(&args, 1, member).await?;
                 let first = self.hold(b"page one".to_vec());
                 let second = self.hold(b"page two".to_vec());
                 Ok(json!({
@@ -303,6 +304,34 @@ impl Interface for RecordingService {
                 message: format!("unexpected test member {unknown}"),
             }),
         }
+    }
+}
+
+#[async_trait]
+impl Interface for RecordingService {
+    fn name(&self) -> InterfaceName {
+        InterfaceName::new(BUS_NAME).expect("valid TinyDocs interface")
+    }
+
+    fn members(&self) -> Vec<MemberName> {
+        METHODS
+            .iter()
+            .map(|member| MemberName::new(*member).expect("valid TinyDocs member"))
+            .collect()
+    }
+
+    async fn call(&self, member: &MemberName, args: Value) -> tinybus::Result<Value> {
+        let member = member.as_str().to_string();
+        let fault = self.record_call(&member, &args);
+        if let Some((name, message)) = fault {
+            return self.return_fault(&member, &args, (name, message)).await;
+        }
+        if let Some(reply) = self.malformed_reply(&member) {
+            return self
+                .return_malformed_reply(&member, &args, reply)
+                .await;
+        }
+        self.dispatch_member(&member, args).await
     }
 }
 
@@ -367,8 +396,10 @@ async fn test_fixture_with_options(enabled: bool, timeout: Option<Duration>) -> 
     let server = Connection::connect(bus.connect().await.expect("server transport"))
         .await
         .expect("server connection");
-    let mut initial_state = State::default();
-    initial_state.generated_bytes = b"docx bytes".to_vec();
+    let initial_state = State {
+        generated_bytes: b"docx bytes".to_vec(),
+        ..State::default()
+    };
     let state = Arc::new(Mutex::new(initial_state));
     server
         .serve_at(
@@ -702,7 +733,7 @@ async fn credential_like_held_output_error_is_redacted_from_formatted_errors() {
 }
 
 #[tokio::test]
-async fn module_wire_failures_keep_invalid_input_distinct_from_execution_failure() {
+async fn ordinary_module_wire_failures_keep_input_availability_and_execution_distinct() {
     let fixture = test_fixture().await;
     fixture
         .state
@@ -758,7 +789,10 @@ async fn module_wire_failures_keep_invalid_input_distinct_from_execution_failure
         fixture.client.generate_docx(&document_spec()).await,
         Err(DocumentCallError::Unavailable(_))
     ));
+}
 
+#[tokio::test]
+async fn streamed_module_wire_failures_keep_input_and_execution_distinct() {
     let fixture = test_fixture().await;
     fixture
         .state
@@ -800,7 +834,10 @@ async fn module_wire_failures_keep_invalid_input_distinct_from_execution_failure
         fixture.client.inspect_image(b"PNG bytes").await,
         Err(DocumentCallError::Failed(_))
     ));
+}
 
+#[tokio::test]
+async fn held_output_invalid_input_is_classified_and_still_released() {
     let fixture = test_fixture().await;
     fixture
         .state
@@ -818,15 +855,19 @@ async fn module_wire_failures_keep_invalid_input_distinct_from_execution_failure
         fixture.client.generate_docx(&document_spec()).await,
         Err(DocumentCallError::InvalidInput(_))
     ));
-    let state = fixture.state.lock().expect("fixture state lock");
-    assert!(
+    let released = {
+        let state = fixture.state.lock().expect("fixture state lock");
         state
             .calls
             .iter()
             .any(|call| call.member == methods::RELEASE_OUTPUT)
-    );
-    assert!(state.outputs.is_empty());
+            && state.outputs.is_empty()
+    };
+    assert!(released);
+}
 
+#[tokio::test]
+async fn malformed_typed_stream_reply_is_a_failed_call() {
     let fixture = test_fixture().await;
     fixture
         .state
@@ -848,7 +889,7 @@ async fn module_wire_failures_keep_invalid_input_distinct_from_execution_failure
 #[tokio::test]
 async fn held_outputs_are_chunked_in_order_verified_and_released() {
     let fixture = test_fixture().await;
-    let bytes = vec![0x5a; (CHUNK_BYTES * 2 + 13) as usize];
+    let bytes = vec![0x5a; CHUNK_BYTES_USIZE * 2 + 13];
     {
         let mut state = fixture.state.lock().expect("fixture state lock");
         state.generated_bytes = bytes.clone();
@@ -928,7 +969,7 @@ async fn held_outputs_are_chunked_in_order_verified_and_released() {
             let mut state = fixture.state.lock().expect("fixture state lock");
             state.read_mode = mode;
             if matches!(mode, ReadMode::Overlong) {
-                state.generated_bytes = vec![0x33; CHUNK_BYTES as usize + 16];
+                state.generated_bytes = vec![0x33; CHUNK_BYTES_USIZE + 16];
                 state.declared_size = Some(CHUNK_BYTES);
                 let declared_digest = digest(&state.generated_bytes);
                 state.declared_digest = Some(declared_digest);
