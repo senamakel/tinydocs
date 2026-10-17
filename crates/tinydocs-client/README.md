@@ -5,14 +5,12 @@ module. It translates contract methods and held outputs into typed Rust calls.
 It does not load modules, decide readiness, configure reporting, or choose
 deadlines; those choices belong to the embedding host.
 
-Ordinary typed calls use `ModuleClient::call_detailed`. The existing adapter
-also needs streamed input, which the published TinyBus SDK does not currently
-expose through `ModuleClient`. The client contract tests specify the required
-SDK additions: detailed streaming calls that retain module readiness,
-registry-address validation, the configured timeout, and failure reporting,
-plus detailed calls on `ModuleObjectClient` so held-output wire errors retain
-their contract distinction. The host continues to own module loading and
-transport lifecycle.
+Ordinary typed calls use `ModuleClient::call_detailed`. Upload operations use
+`ModuleClient::call_with_stream_detailed`, which keeps readiness, registry
+validation, timeouts, and failure reporting inside the SDK. Held-output reads
+use `ModuleObjectClient::call_detailed` so their wire errors retain the same
+contract distinctions. The host continues to own module loading and transport
+lifecycle.
 
 Variable-size results use the contract's held-output protocol. The client
 reads bounded base64 chunks, checks the declared length and SHA-256 digest, and

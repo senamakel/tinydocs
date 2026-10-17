@@ -174,6 +174,17 @@ impl Interface for RecordingService {
             state.faults.get(&member).cloned()
         };
         if let Some((name, message)) = fault {
+            let stream_index = match member.as_str() {
+                methods::GENERATE_PPTX if !args[1].is_null() => Some(1),
+                methods::EXTRACT_TEXT | methods::INSPECT_IMAGE => Some(0),
+                methods::EXTRACT_DOCUMENT | methods::CONVERT_MARKDOWN | methods::RENDER_PDF => {
+                    Some(1)
+                }
+                _ => None,
+            };
+            if let Some(index) = stream_index {
+                self.read_stream_arg(&args, index, &member).await?;
+            }
             return Err(Error::MethodFailed { name, message });
         }
         let malformed = self
@@ -509,6 +520,48 @@ async fn module_wire_failures_keep_invalid_input_distinct_from_execution_failure
     assert!(matches!(
         fixture.client.generate_docx(&document_spec()).await,
         Err(DocumentCallError::Unavailable(_))
+    ));
+
+    let fixture = fixture().await;
+    fixture
+        .state
+        .lock()
+        .expect("fixture state lock")
+        .faults
+        .insert(
+            methods::EXTRACT_DOCUMENT.to_string(),
+            (
+                "ai.tinyhumans.tinydocs.Error.InvalidInput".into(),
+                "PDF header is invalid".into(),
+            ),
+        );
+    assert!(matches!(
+        fixture
+            .client
+            .extract_document(
+                b"invalid PDF",
+                &ExtractDocumentSpec::new(DocumentFormat::Pdf)
+            )
+            .await,
+        Err(DocumentCallError::InvalidInput(_))
+    ));
+
+    let fixture = fixture().await;
+    fixture
+        .state
+        .lock()
+        .expect("fixture state lock")
+        .faults
+        .insert(
+            methods::INSPECT_IMAGE.to_string(),
+            (
+                "ai.tinyhumans.tinydocs.Error.ExtractionFailed".into(),
+                "image parser failed".into(),
+            ),
+        );
+    assert!(matches!(
+        fixture.client.inspect_image(b"PNG bytes").await,
+        Err(DocumentCallError::Failed(_))
     ));
 
     let fixture = fixture().await;
