@@ -8,9 +8,11 @@ deadlines; those choices belong to the embedding host.
 Ordinary typed calls use `ModuleClient::call_detailed`. The existing adapter
 also needs streamed input, which the published TinyBus SDK does not currently
 expose through `ModuleClient`. The client contract tests specify the required
-SDK addition: a detailed streaming call that retains module readiness,
-registry-address validation, the configured timeout, and failure reporting.
-The host continues to own module loading and transport lifecycle.
+SDK additions: detailed streaming calls that retain module readiness,
+registry-address validation, the configured timeout, and failure reporting,
+plus detailed calls on `ModuleObjectClient` so held-output wire errors retain
+their contract distinction. The host continues to own module loading and
+transport lifecycle.
 
 Variable-size results use the contract's held-output protocol. The client
 reads bounded base64 chunks, checks the declared length and SHA-256 digest, and

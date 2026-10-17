@@ -445,9 +445,12 @@ async fn typed_operations_use_contract_members_and_stream_document_bytes() {
     assert!(state.calls.iter().any(|call| {
         call.member == methods::GENERATE_DOCX && call.args[0]["title"] == "Broker proof"
     }));
-    assert!(state.calls.iter().any(|call| {
-        call.member == methods::GENERATE_PPTX && call.args[1].is_null()
-    }));
+    assert!(
+        state
+            .calls
+            .iter()
+            .any(|call| { call.member == methods::GENERATE_PPTX && call.args[1].is_null() })
+    );
 }
 
 #[tokio::test]
@@ -525,7 +528,12 @@ async fn module_wire_failures_keep_invalid_input_distinct_from_execution_failure
         Err(DocumentCallError::InvalidInput(_))
     ));
     let state = fixture.state.lock().expect("fixture state lock");
-    assert!(state.calls.iter().any(|call| call.member == methods::RELEASE_OUTPUT));
+    assert!(
+        state
+            .calls
+            .iter()
+            .any(|call| call.member == methods::RELEASE_OUTPUT)
+    );
     assert!(state.outputs.is_empty());
 
     let fixture = fixture().await;
