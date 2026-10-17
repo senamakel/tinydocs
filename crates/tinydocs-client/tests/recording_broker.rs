@@ -889,7 +889,7 @@ async fn malformed_typed_stream_reply_is_a_failed_call() {
 }
 
 #[tokio::test]
-async fn held_outputs_are_chunked_in_order_verified_and_released() {
+async fn held_outputs_are_read_in_order_and_released_after_success() {
     let fixture = test_fixture().await;
     let bytes = vec![0x5a; CHUNK_BYTES_USIZE * 2 + 13];
     {
@@ -921,7 +921,10 @@ async fn held_outputs_are_chunked_in_order_verified_and_released() {
             .outputs
             .is_empty()
     );
+}
 
+#[tokio::test]
+async fn held_outputs_with_bad_digest_or_declared_size_are_released() {
     let fixture = test_fixture().await;
     {
         let mut state = fixture.state.lock().expect("fixture state lock");
@@ -968,7 +971,10 @@ async fn held_outputs_are_chunked_in_order_verified_and_released() {
                 .any(|call| call.member == methods::RELEASE_OUTPUT)
         );
     }
+}
 
+#[tokio::test]
+async fn truncated_invalid_and_overlong_chunks_are_released() {
     for mode in [ReadMode::Empty, ReadMode::InvalidBase64, ReadMode::Overlong] {
         let fixture = test_fixture().await;
         {
