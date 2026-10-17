@@ -400,6 +400,14 @@ async fn typed_operations_use_contract_members_and_stream_document_bytes() {
     assert_eq!(
         fixture
             .client
+            .generate_pptx(&deck, &[])
+            .await
+            .expect("text-only PPTX avoids an upload stream"),
+        b"pptx bytes"
+    );
+    assert_eq!(
+        fixture
+            .client
             .extract_text(input)
             .await
             .expect("text is read"),
@@ -436,6 +444,9 @@ async fn typed_operations_use_contract_members_and_stream_document_bytes() {
     assert_eq!(state.input_streams[methods::CONVERT_MARKDOWN], input);
     assert!(state.calls.iter().any(|call| {
         call.member == methods::GENERATE_DOCX && call.args[0]["title"] == "Broker proof"
+    }));
+    assert!(state.calls.iter().any(|call| {
+        call.member == methods::GENERATE_PPTX && call.args[1].is_null()
     }));
 }
 
