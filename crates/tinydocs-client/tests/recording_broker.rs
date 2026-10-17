@@ -670,12 +670,13 @@ async fn cancellation_releases_held_output_and_render_releases_every_page() {
     call.abort();
     let _ = call.await;
     release_seen.notified().await;
-    fixture
+    let resume_read = fixture
         .state
         .lock()
         .expect("fixture state lock")
         .resume_read
-        .notify_one();
+        .clone();
+    resume_read.notify_one();
     assert!(
         fixture
             .state
@@ -710,5 +711,33 @@ async fn cancellation_releases_held_output_and_render_releases_every_page() {
             .expect("fixture state lock")
             .outputs
             .is_empty()
+    );
+
+    let fixture = fixture().await;
+    fixture.state.lock().expect("fixture state lock").read_mode = ReadMode::InvalidBase64;
+    assert!(matches!(
+        fixture
+            .client
+            .render_pdf(
+                b"PDF input",
+                &RenderPdfSpec {
+                    pages: vec![1, 3],
+                    max_dimension: 256,
+                    max_total_pixels: 65_536,
+                    max_output_bytes: 1_048_576,
+                },
+            )
+            .await,
+        Err(DocumentCallError::Failed(_))
+    ));
+    let state = fixture.state.lock().expect("fixture state lock");
+    assert!(state.outputs.is_empty());
+    assert_eq!(
+        state
+            .calls
+            .iter()
+            .filter(|call| call.member == methods::RELEASE_OUTPUT)
+            .count(),
+        2
     );
 }
