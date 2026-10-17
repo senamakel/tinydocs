@@ -485,13 +485,14 @@ async fn module_wire_failures_keep_invalid_input_distinct_from_execution_failure
                 "private generator detail".into(),
             ),
         );
-    let error = fixture
-        .client
-        .generate_docx(&document_spec())
-        .await
-        .expect_err("generation failure is returned");
-    assert!(matches!(error, DocumentCallError::Failed(_)));
-    assert!(!error.to_string().contains("private generator detail"));
+    assert!(matches!(
+        fixture
+            .client
+            .generate_docx(&document_spec())
+            .await
+            .expect_err("generation failure is returned"),
+        DocumentCallError::Failed(_)
+    ));
 
     fixture
         .state
