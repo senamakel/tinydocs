@@ -5,8 +5,11 @@ use std::fmt::{Debug, Formatter};
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use sha2::{Digest, Sha256};
-use tinybus::module::{ModuleCallError, ModuleCallFailure, ModuleClient, ModuleObjectClient};
-use tinydocs_bus::names::{OBJECT_PATH, methods};
+use tinybus::module::{
+    ModuleCallError, ModuleCallFailure, ModuleClient, PinnedModuleClient,
+    PinnedModuleObjectClient,
+};
+use tinydocs_bus::names::methods;
 use tinydocs_bus::spec::presentation::MAX_IMAGE_BYTES;
 use tinydocs_bus::{
     DocumentFormat, DocumentSpec, ExtractDocumentSpec, ExtractedDocument, ImageFacts, OutputRef,
@@ -52,10 +55,10 @@ impl TinyDocsClient {
     /// Returns [`DocumentCallError`] when `TinyDocs` is unavailable, rejects the
     /// specification, or fails to generate or transfer the output.
     pub async fn generate_docx(&self, spec: &DocumentSpec) -> Result<Vec<u8>, DocumentCallError> {
-        let output = self.output_client().await?;
-        let handle: OutputRef = self
-            .module
-            .call_detailed(MODULE_ID, methods::GENERATE_DOCX, (spec,))
+        let module = self.bind().await?;
+        let output = self.output_client(&module)?;
+        let handle: OutputRef = module
+            .call_detailed(methods::GENERATE_DOCX, (spec,))
             .await
             .map_err(classify_failure)?;
         collect(&output, handle).await
@@ -76,20 +79,19 @@ impl TinyDocsClient {
         deck: &WirePresentationSpec,
         images: &[u8],
     ) -> Result<Vec<u8>, DocumentCallError> {
-        let output = self.output_client().await?;
+        let module = self.bind().await?;
+        let output = self.output_client(&module)?;
         let handle: OutputRef = if images.is_empty() {
-            self.module
+            module
                 .call_detailed(
-                    MODULE_ID,
                     methods::GENERATE_PPTX,
                     (deck, Option::<tinybus::stream::StreamRef>::None),
                 )
                 .await
                 .map_err(classify_failure)?
         } else {
-            self.module
+            module
                 .call_with_stream_detailed(
-                    MODULE_ID,
                     methods::GENERATE_PPTX,
                     |stream| serde_json::json!([deck, stream]),
                     images,
@@ -109,11 +111,10 @@ impl TinyDocsClient {
     /// Returns [`DocumentCallError`] when extraction, output transfer, or UTF-8
     /// decoding fails.
     pub async fn extract_text(&self, document: &[u8]) -> Result<String, DocumentCallError> {
-        let output = self.output_client().await?;
-        let handle: OutputRef = self
-            .module
+        let module = self.bind().await?;
+        let output = self.output_client(&module)?;
+        let handle: OutputRef = module
             .call_with_stream_detailed(
-                MODULE_ID,
                 methods::EXTRACT_TEXT,
                 |stream| serde_json::json!([stream]),
                 document,
@@ -158,11 +159,10 @@ impl TinyDocsClient {
         format: DocumentFormat,
         document: &[u8],
     ) -> Result<String, DocumentCallError> {
-        let output = self.output_client().await?;
-        let handle: OutputRef = self
-            .module
+        let module = self.bind().await?;
+        let output = self.output_client(&module)?;
+        let handle: OutputRef = module
             .call_with_stream_detailed(
-                MODULE_ID,
                 methods::CONVERT_MARKDOWN,
                 |stream| serde_json::json!([format, stream]),
                 document,
@@ -210,11 +210,10 @@ impl TinyDocsClient {
         document: &[u8],
         spec: &RenderPdfSpec,
     ) -> Result<Vec<(u32, Vec<u8>)>, DocumentCallError> {
-        let output = self.output_client().await?;
-        let rendered: RenderedPdf = self
-            .module
+        let module = self.bind().await?;
+        let output = self.output_client(&module)?;
+        let rendered: RenderedPdf = module
             .call_with_stream_detailed(
-                MODULE_ID,
                 methods::RENDER_PDF,
                 |stream| serde_json::json!([spec, stream]),
                 document,
@@ -253,17 +252,23 @@ impl TinyDocsClient {
         }
     }
 
-    async fn output_client(&self) -> Result<ModuleObjectClient, DocumentCallError> {
-        self.module
-            .object_client(MODULE_ID, OBJECT_PATH)
-            .await
+    async fn bind(&self) -> Result<PinnedModuleClient, DocumentCallError> {
+        self.module.bind(MODULE_ID).await.map_err(classify_failure)
+    }
+
+    fn output_client(
+        &self,
+        module: &PinnedModuleClient,
+    ) -> Result<PinnedModuleObjectClient, DocumentCallError> {
+        module
+            .object_client(tinydocs_bus::names::OBJECT_PATH)
             .map_err(classify_sdk_error)
     }
 }
 
 /// Releases retained module outputs when the collection future is cancelled.
 struct OutputReleaseGuard {
-    output: ModuleObjectClient,
+    output: PinnedModuleObjectClient,
     ids: Vec<String>,
 }
 
@@ -294,7 +299,7 @@ impl Drop for OutputReleaseGuard {
 }
 
 async fn collect(
-    output: &ModuleObjectClient,
+    output: &PinnedModuleObjectClient,
     handle: OutputRef,
 ) -> Result<Vec<u8>, DocumentCallError> {
     let mut release = OutputReleaseGuard {
@@ -314,7 +319,7 @@ async fn collect(
 }
 
 async fn read_all(
-    output: &ModuleObjectClient,
+    output: &PinnedModuleObjectClient,
     handle: &OutputRef,
 ) -> Result<Vec<u8>, DocumentCallError> {
     if handle.total_bytes > MAX_DOCUMENT_BYTES {
