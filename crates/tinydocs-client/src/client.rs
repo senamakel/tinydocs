@@ -371,6 +371,7 @@ fn classify_failure(failure: ModuleCallFailure) -> DocumentCallError {
     if failure.wire_name == INVALID_INPUT_WIRE_NAME {
         DocumentCallError::InvalidInput(failure.message)
     } else if failure.kind == ModuleCallError::Unavailable
+        || failure.kind == ModuleCallError::IncompatibleContract
         || failure.wire_name.contains("ModuleUnavailable")
     {
         DocumentCallError::Unavailable(failure.to_string())
@@ -380,7 +381,10 @@ fn classify_failure(failure: ModuleCallFailure) -> DocumentCallError {
 }
 
 fn classify_sdk_error(error: ModuleCallError) -> DocumentCallError {
-    if error == ModuleCallError::Unavailable {
+    if matches!(
+        error,
+        ModuleCallError::Unavailable | ModuleCallError::IncompatibleContract
+    ) {
         DocumentCallError::Unavailable(error.to_string())
     } else {
         DocumentCallError::Failed(error.to_string())
