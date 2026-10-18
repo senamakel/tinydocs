@@ -6,7 +6,7 @@
 //! Product-facing `TinyDocs` client tests over an in-process recording broker.
 
 use std::collections::{BTreeMap, HashMap};
-use std::sync::{Arc, Mutex, atomic::{AtomicUsize, Ordering}};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -52,42 +52,6 @@ struct FixtureAccess {
     connection: Connection,
     reporter: FailureReporter,
     enabled: bool,
-}
-
-/// Transfers the well-known name after the output object has resolved, while
-/// leaving the original peer connected for the in-flight operation.
-struct HandoverAccess {
-    client_connection: Connection,
-    original: Connection,
-    replacement: Connection,
-    reporter: FailureReporter,
-    lookups: AtomicUsize,
-}
-
-impl ModuleAccess for HandoverAccess {
-    fn find(&self, id: &str) -> Option<&'static ReleaseRecord> {
-        (id == MODULE_ID).then_some(&RECORD)
-    }
-
-    fn enabled(&self) -> bool { true }
-
-    fn reporter(&self) -> &FailureReporter { &self.reporter }
-
-    fn ensure_loaded<'a>(&'a self, _id: &'a str) -> AccessFuture<'a, Result<(), String>> {
-        Box::pin(async move {
-            if self.lookups.fetch_add(1, Ordering::SeqCst) == 1 {
-                self.original.release_name(BUS_NAME).await.map_err(|_| "release failed".to_string())?;
-                self.replacement.request_name(BUS_NAME).await.map_err(|_| "request failed".to_string())?;
-            }
-            Ok(())
-        })
-    }
-
-    fn proxy<'a>(&'a self, bus_name: &'a str, object_path: &'a str) -> AccessFuture<'a, Result<Proxy, ProxyFailure>> {
-        Box::pin(async move {
-            self.client_connection.proxy(bus_name, object_path, bus_name).map_err(|_| ProxyFailure::Contract)
-        })
-    }
 }
 
 impl ModuleAccess for FixtureAccess {
@@ -145,6 +109,7 @@ struct State {
     resume_read: Arc<Notify>,
     release_started: Arc<Notify>,
     release_delay: Option<Duration>,
+    handover_to: Option<Connection>,
 }
 
 #[derive(Clone, Copy, Default)]
