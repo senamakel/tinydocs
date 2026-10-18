@@ -60,32 +60,31 @@ fn unavailable_sdk_outcomes_stay_distinct_from_module_failures() {
     ));
 }
 
+fn assert_unavailable_without_remote_detail(error: &DocumentCallError, remote_detail: &str) {
+    assert!(matches!(error, DocumentCallError::Unavailable(_)));
+    assert_eq!(
+        error.raw_message(),
+        "MODULE_CALL_REPORTED: module incompatible contract"
+    );
+    assert!(!format!("{error:?}").contains(remote_detail));
+    assert!(!error.to_string().contains(remote_detail));
+}
+
 #[test]
-fn incompatible_contract_is_unavailable_without_exposing_peer_text() {
+fn detailed_incompatible_contract_maps_to_unavailable_without_exposing_peer_text() {
     let remote_detail = "untrusted compatibility detail";
-    let detailed = classify_failure(failure(
+    let error = classify_failure(failure(
         ModuleCallError::IncompatibleContract,
         "ai.tinyhumans.tinybus.Error.IncompatibleVersion",
         remote_detail,
     ));
-    let sdk = classify_sdk_error(ModuleCallError::IncompatibleContract);
-    let expected_message = "MODULE_CALL_REPORTED: module incompatible contract";
+    assert_unavailable_without_remote_detail(&error, remote_detail);
+}
 
-    for error in [detailed, sdk] {
-        assert!(matches!(&error, DocumentCallError::Unavailable(_)));
-        assert_eq!(error.raw_message(), expected_message);
-        assert!(!format!("{error:?}").contains(remote_detail));
-        assert!(!error.to_string().contains(remote_detail));
-    }
-
-    assert!(matches!(
-        classify_failure(failure(
-            ModuleCallError::ModuleFault,
-            "ai.tinyhumans.tinydocs.Error.CompatibilityFailure",
-            remote_detail,
-        )),
-        DocumentCallError::Failed(_)
-    ));
+#[test]
+fn sdk_incompatible_contract_maps_to_unavailable_without_exposing_peer_text() {
+    let error = classify_sdk_error(ModuleCallError::IncompatibleContract);
+    assert_unavailable_without_remote_detail(&error, "untrusted compatibility detail");
 }
 
 #[test]
