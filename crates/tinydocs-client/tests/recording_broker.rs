@@ -917,13 +917,14 @@ async fn disabled_modules_are_unavailable_and_local_image_bounds_send_no_call() 
         fixture.client.generate_docx(&document_spec()).await,
         Err(DocumentCallError::Unavailable(_))
     ));
-    assert!(
+    assert_eq!(
         fixture
             .state
             .lock()
             .expect("fixture state lock")
             .calls
-            .is_empty()
+            .len(),
+        0
     );
 
     let fixture = test_fixture().await;
@@ -936,13 +937,14 @@ async fn disabled_modules_are_unavailable_and_local_image_bounds_send_no_call() 
         fixture.client.inspect_image(&oversized).await,
         Err(DocumentCallError::InvalidInput(_))
     ));
-    assert!(
+    assert_eq!(
         fixture
             .state
             .lock()
             .expect("fixture state lock")
             .calls
-            .is_empty()
+            .len(),
+        0
     );
 }
 
