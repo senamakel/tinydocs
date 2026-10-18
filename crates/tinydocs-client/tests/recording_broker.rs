@@ -1242,7 +1242,7 @@ async fn held_output_invalid_input_is_classified_and_still_released() {
 }
 
 #[tokio::test]
-async fn malformed_typed_stream_reply_is_a_failed_call() {
+async fn malformed_typed_stream_reply_is_unavailable_for_contract_mismatch() {
     let fixture = test_fixture().await;
     fixture
         .state
@@ -1258,7 +1258,7 @@ async fn malformed_typed_stream_reply_is_a_failed_call() {
         .extract_document(b"PDF bytes", &ExtractDocumentSpec::new(DocumentFormat::Pdf))
         .await
         .expect_err("a malformed typed reply is rejected");
-    assert!(matches!(error, DocumentCallError::Failed(_)));
+    assert!(matches!(error, DocumentCallError::Unavailable(_)));
 }
 
 #[tokio::test]
