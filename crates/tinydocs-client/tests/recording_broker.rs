@@ -6,7 +6,7 @@
 //! Product-facing `TinyDocs` client tests over an in-process recording broker.
 
 use std::collections::{BTreeMap, HashMap};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, atomic::{AtomicUsize, Ordering}};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -52,6 +52,42 @@ struct FixtureAccess {
     connection: Connection,
     reporter: FailureReporter,
     enabled: bool,
+}
+
+/// Transfers the well-known name after the output object has resolved, while
+/// leaving the original peer connected for the in-flight operation.
+struct HandoverAccess {
+    client_connection: Connection,
+    original: Connection,
+    replacement: Connection,
+    reporter: FailureReporter,
+    lookups: AtomicUsize,
+}
+
+impl ModuleAccess for HandoverAccess {
+    fn find(&self, id: &str) -> Option<&'static ReleaseRecord> {
+        (id == MODULE_ID).then_some(&RECORD)
+    }
+
+    fn enabled(&self) -> bool { true }
+
+    fn reporter(&self) -> &FailureReporter { &self.reporter }
+
+    fn ensure_loaded<'a>(&'a self, _id: &'a str) -> AccessFuture<'a, Result<(), String>> {
+        Box::pin(async move {
+            if self.lookups.fetch_add(1, Ordering::SeqCst) == 1 {
+                self.original.release_name(BUS_NAME).await.map_err(|_| "release failed".to_string())?;
+                self.replacement.request_name(BUS_NAME).await.map_err(|_| "request failed".to_string())?;
+            }
+            Ok(())
+        })
+    }
+
+    fn proxy<'a>(&'a self, bus_name: &'a str, object_path: &'a str) -> AccessFuture<'a, Result<Proxy, ProxyFailure>> {
+        Box::pin(async move {
+            self.client_connection.proxy(bus_name, object_path, bus_name).map_err(|_| ProxyFailure::Contract)
+        })
+    }
 }
 
 impl ModuleAccess for FixtureAccess {
@@ -439,6 +475,40 @@ async fn test_fixture_with_options(enabled: bool, timeout: Option<Duration>) -> 
     }
 }
 
+struct PeerHandoverFixture {
+    client: TinyDocsClient,
+    original: Arc<Mutex<State>>,
+    replacement: Arc<Mutex<State>>,
+    _broker: tokio::task::JoinHandle<tinybus::Result<()>>,
+}
+
+async fn peer_handover_fixture() -> PeerHandoverFixture {
+    let bus = MemoryBus::new();
+    let broker = Broker::new().spawn(bus.clone());
+    let original_connection = Connection::connect(bus.connect().await.expect("original transport"))
+        .await.expect("original connection");
+    let replacement_connection = Connection::connect(bus.connect().await.expect("replacement transport"))
+        .await.expect("replacement connection");
+    let original = Arc::new(Mutex::new(State { generated_bytes: b"original bytes".to_vec(), ..State::default() }));
+    let replacement = Arc::new(Mutex::new(State { generated_bytes: b"replacement bytes".to_vec(), ..State::default() }));
+    for (connection, state) in [(&original_connection, original.clone()), (&replacement_connection, replacement.clone())] {
+        connection.serve_at(ObjectPath::new(OBJECT_PATH).expect("valid TinyDocs path"), RecordingService {
+            connection: connection.clone(), state,
+        }).await.expect("serve peer");
+    }
+    original_connection.request_name(BUS_NAME).await.expect("original owns alias");
+    let client_connection = Connection::connect(bus.connect().await.expect("client transport"))
+        .await.expect("client connection");
+    let access = HandoverAccess {
+        client_connection,
+        original: original_connection,
+        replacement: replacement_connection,
+        reporter: FailureReporter::new(Arc::new(NoopSink)),
+        lookups: AtomicUsize::new(0),
+    };
+    PeerHandoverFixture { client: TinyDocsClient::new(ModuleClient::new(access)), original, replacement, _broker: broker }
+}
+
 fn digest(bytes: &[u8]) -> String {
     let mut output = String::new();
     for byte in Sha256::digest(bytes) {
@@ -454,6 +524,49 @@ fn document_spec() -> DocumentSpec {
         author: None,
         sections: vec![],
     }
+}
+
+#[tokio::test]
+async fn held_docx_uses_the_peer_that_owns_its_generation() {
+    let fixture = peer_handover_fixture().await;
+    let result = fixture.client.generate_docx(&document_spec()).await;
+    let replacement_control = fixture.client.generate_docx(&document_spec()).await;
+
+    // This is the currently failing regression draft: object_client resolves
+    // the original peer, then the producer call sees the replacement alias.
+    // A per-operation pin must keep both calls on the original broker peer.
+    assert_eq!(result.expect("generation and held output stay on original"), b"original bytes");
+    assert_eq!(replacement_control.expect("replacement remains usable at the same object path"), b"replacement bytes");
+    let original = fixture.original.lock().expect("original state lock");
+    let replacement = fixture.replacement.lock().expect("replacement state lock");
+    assert_eq!(original.calls.iter().filter(|call| call.member == methods::GENERATE_DOCX).count(), 1);
+    assert_eq!(original.calls.iter().filter(|call| call.member == methods::READ_OUTPUT).count(), 1);
+    assert_eq!(original.calls.iter().filter(|call| call.member == methods::RELEASE_OUTPUT).count(), 1);
+    assert_eq!(replacement.calls.iter().filter(|call| call.member == methods::GENERATE_DOCX).count(), 2);
+    assert!(replacement.calls.iter().any(|call| call.member == methods::READ_OUTPUT));
+    assert!(replacement.calls.iter().any(|call| call.member == methods::RELEASE_OUTPUT));
+}
+
+#[tokio::test]
+async fn held_pptx_upload_and_output_use_the_peer_that_owns_generation() {
+    let fixture = peer_handover_fixture().await;
+    let deck = tinydocs_bus::WirePresentationSpec { title: "Deck".into(), author: None, theme: None, slides: vec![] };
+    let images = b"fresh image bytes";
+    let result = fixture.client.generate_pptx(&deck, images).await;
+    let replacement_control = fixture.client.generate_pptx(&deck, images).await;
+
+    assert_eq!(result.expect("streamed generation and held output stay on original"), b"original bytes");
+    assert_eq!(replacement_control.expect("replacement remains usable at the same object path"), b"replacement bytes");
+    let original = fixture.original.lock().expect("original state lock");
+    let replacement = fixture.replacement.lock().expect("replacement state lock");
+    assert_eq!(original.calls.iter().filter(|call| call.member == methods::GENERATE_PPTX).count(), 1);
+    assert_eq!(original.calls.iter().filter(|call| call.member == methods::READ_OUTPUT).count(), 1);
+    assert_eq!(original.calls.iter().filter(|call| call.member == methods::RELEASE_OUTPUT).count(), 1);
+    assert_eq!(original.input_streams.get(methods::GENERATE_PPTX).map(Vec::as_slice), Some(images.as_slice()));
+    assert_eq!(replacement.calls.iter().filter(|call| call.member == methods::GENERATE_PPTX).count(), 2);
+    assert_eq!(replacement.input_streams.get(methods::GENERATE_PPTX).map(Vec::as_slice), Some(images.as_slice()));
+    assert!(replacement.calls.iter().any(|call| call.member == methods::READ_OUTPUT));
+    assert!(replacement.calls.iter().any(|call| call.member == methods::RELEASE_OUTPUT));
 }
 
 #[tokio::test]
