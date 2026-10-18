@@ -24,9 +24,10 @@ const INVALID_INPUT_WIRE_NAME: &str = "ai.tinyhumans.tinydocs.Error.InvalidInput
 
 /// Typed client for the `TinyDocs` module.
 ///
-/// The embedding host supplies its process-owned [`ModuleClient`], which keeps
-/// module loading, readiness, timeouts, and failure reporting outside this
-/// crate.
+/// The embedding host supplies its process-owned [`ModuleClient`]. Each
+/// operation that returns held outputs binds the serving peer for that
+/// operation, keeping its producer, output reads, releases, and cleanup on the
+/// same peer. Stateless one-call operations continue through `ModuleClient`.
 #[derive(Clone)]
 pub struct TinyDocsClient {
     module: ModuleClient,

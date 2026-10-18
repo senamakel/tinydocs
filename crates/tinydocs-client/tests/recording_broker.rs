@@ -110,6 +110,7 @@ struct State {
     release_started: Arc<Notify>,
     release_delay: Option<Duration>,
     handover_to: Option<Connection>,
+    detach_on_read: bool,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -360,16 +361,20 @@ impl RecordingService {
         let output_id = args[0].as_str().expect("output id string").to_string();
         let offset = args[1].as_u64().expect("output offset");
         let requested = args[2].as_u64().expect("requested length");
-        let (mode, block, started, resume, bytes) = {
+        let (mode, block, started, resume, detach, bytes) = {
             let state = self.state.lock().expect("fixture state lock");
             (
                 state.read_mode,
                 state.block_reads,
                 state.read_started.clone(),
                 state.resume_read.clone(),
+                state.detach_on_read,
                 state.outputs.get(&output_id).cloned().unwrap_or_default(),
             )
         };
+        if detach {
+            self.connection.close().await?;
+        }
         if block {
             started.notify_one();
             resume.notified().await;
@@ -787,6 +792,38 @@ async fn multi_page_render_outputs_stay_with_their_producer_after_alias_handover
             && original_counts == (1, 2, 2)
             && replacement_counts == (1, 2, 2),
         "peer-hop RenderPdf: original_pages={original_pages}, replacement_control_pages={replacement_pages}, original render/read/release={original_counts:?}, replacement render/read/release={replacement_counts:?}"
+    );
+}
+
+#[tokio::test]
+async fn detached_output_owner_does_not_fall_through_to_alias_replacement() {
+    let fixture = peer_handover_fixture().await;
+    fixture
+        .original
+        .lock()
+        .expect("original state lock")
+        .detach_on_read = true;
+    // The replacement deliberately has the same opaque resource id and bytes.
+    // A mistaken alias retry could therefore appear successful without the
+    // per-peer call counters below.
+    fixture
+        .replacement
+        .lock()
+        .expect("replacement state lock")
+        .outputs
+        .insert("output-1".into(), b"original bytes".to_vec());
+
+    let result = fixture.client.generate_docx(&document_spec()).await;
+    assert!(matches!(result, Err(DocumentCallError::Failed(_))));
+    let original = fixture.original.lock().expect("original state lock");
+    let replacement = fixture.replacement.lock().expect("replacement state lock");
+    assert_eq!(
+        output_call_counts(&original, methods::GENERATE_DOCX),
+        (1, 1, 0)
+    );
+    assert!(
+        replacement.calls.is_empty(),
+        "detached output work must not reach the alias replacement"
     );
 }
 
