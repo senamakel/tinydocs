@@ -480,16 +480,18 @@ async fn peer_handover_fixture() -> PeerHandoverFixture {
         handover_to: Some(replacement_connection.clone()),
         ..State::default()
     };
-    original_state
-        .output_overrides
-        .insert(methods::GENERATE_PPTX.into(), b"original pptx bytes".to_vec());
+    original_state.output_overrides.insert(
+        methods::GENERATE_PPTX.into(),
+        b"original pptx bytes".to_vec(),
+    );
     let mut replacement_state = State {
         generated_bytes: b"replacement bytes".to_vec(),
         ..State::default()
     };
-    replacement_state
-        .output_overrides
-        .insert(methods::GENERATE_PPTX.into(), b"replacement pptx bytes".to_vec());
+    replacement_state.output_overrides.insert(
+        methods::GENERATE_PPTX.into(),
+        b"replacement pptx bytes".to_vec(),
+    );
     let original = Arc::new(Mutex::new(original_state));
     let replacement = Arc::new(Mutex::new(replacement_state));
     for (connection, state) in [
@@ -557,7 +559,7 @@ async fn held_docx_uses_the_peer_that_owns_its_generation() {
         .is_ok_and(|bytes| bytes == b"original bytes");
     let replacement_bytes = replacement_control
         .as_ref()
-        .is_ok_and(|bytes| bytes == b"replacement pptx bytes");
+        .is_ok_and(|bytes| bytes == b"replacement bytes");
     let original = fixture.original.lock().expect("original state lock");
     let replacement = fixture.replacement.lock().expect("replacement state lock");
     let original_counts = (
@@ -618,10 +620,10 @@ async fn held_pptx_upload_and_output_use_the_peer_that_owns_generation() {
 
     let original_bytes = result
         .as_ref()
-        .is_ok_and(|bytes| bytes == b"original bytes");
+        .is_ok_and(|bytes| bytes == b"original pptx bytes");
     let replacement_bytes = replacement_control
         .as_ref()
-        .is_ok_and(|bytes| bytes == b"replacement bytes");
+        .is_ok_and(|bytes| bytes == b"replacement pptx bytes");
     let original = fixture.original.lock().expect("original state lock");
     let replacement = fixture.replacement.lock().expect("replacement state lock");
     let original_counts = (
