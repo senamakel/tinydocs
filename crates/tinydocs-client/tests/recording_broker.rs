@@ -229,13 +229,17 @@ impl RecordingService {
                     .expect("fixture state lock")
                     .generated_bytes
                     .clone();
-                Ok(serde_json::to_value(self.hold(bytes))?)
+                let output = self.hold(bytes);
+                self.handover_alias().await?;
+                Ok(serde_json::to_value(output)?)
             }
             methods::GENERATE_PPTX => {
                 if !args[1].is_null() {
                     self.read_stream_arg(&args, 1, member).await?;
                 }
-                Ok(serde_json::to_value(self.hold(b"pptx bytes".to_vec()))?)
+                let output = self.hold(b"pptx bytes".to_vec());
+                self.handover_alias().await?;
+                Ok(serde_json::to_value(output)?)
             }
             methods::EXTRACT_TEXT => {
                 self.read_stream_arg(&args, 0, member).await?;
@@ -337,6 +341,20 @@ impl Interface for RecordingService {
 }
 
 impl RecordingService {
+    async fn handover_alias(&self) -> tinybus::Result<()> {
+        let replacement = self
+            .state
+            .lock()
+            .expect("fixture state lock")
+            .handover_to
+            .take();
+        if let Some(replacement) = replacement {
+            self.connection.release_name(BUS_NAME).await?;
+            replacement.request_name(BUS_NAME).await?;
+        }
+        Ok(())
+    }
+
     async fn read_output(&self, args: &Value) -> tinybus::Result<Value> {
         let output_id = args[0].as_str().expect("output id string").to_string();
         let offset = args[1].as_u64().expect("output offset");
@@ -451,27 +469,54 @@ async fn peer_handover_fixture() -> PeerHandoverFixture {
     let bus = MemoryBus::new();
     let broker = Broker::new().spawn(bus.clone());
     let original_connection = Connection::connect(bus.connect().await.expect("original transport"))
-        .await.expect("original connection");
-    let replacement_connection = Connection::connect(bus.connect().await.expect("replacement transport"))
-        .await.expect("replacement connection");
-    let original = Arc::new(Mutex::new(State { generated_bytes: b"original bytes".to_vec(), ..State::default() }));
-    let replacement = Arc::new(Mutex::new(State { generated_bytes: b"replacement bytes".to_vec(), ..State::default() }));
-    for (connection, state) in [(&original_connection, original.clone()), (&replacement_connection, replacement.clone())] {
-        connection.serve_at(ObjectPath::new(OBJECT_PATH).expect("valid TinyDocs path"), RecordingService {
-            connection: connection.clone(), state,
-        }).await.expect("serve peer");
+        .await
+        .expect("original connection");
+    let replacement_connection =
+        Connection::connect(bus.connect().await.expect("replacement transport"))
+            .await
+            .expect("replacement connection");
+    let original = Arc::new(Mutex::new(State {
+        generated_bytes: b"original bytes".to_vec(),
+        handover_to: Some(replacement_connection.clone()),
+        ..State::default()
+    }));
+    let replacement = Arc::new(Mutex::new(State {
+        generated_bytes: b"replacement bytes".to_vec(),
+        ..State::default()
+    }));
+    for (connection, state) in [
+        (&original_connection, original.clone()),
+        (&replacement_connection, replacement.clone()),
+    ] {
+        connection
+            .serve_at(
+                ObjectPath::new(OBJECT_PATH).expect("valid TinyDocs path"),
+                RecordingService {
+                    connection: connection.clone(),
+                    state,
+                },
+            )
+            .await
+            .expect("serve peer");
     }
-    original_connection.request_name(BUS_NAME).await.expect("original owns alias");
+    original_connection
+        .request_name(BUS_NAME)
+        .await
+        .expect("original owns alias");
     let client_connection = Connection::connect(bus.connect().await.expect("client transport"))
-        .await.expect("client connection");
-    let access = HandoverAccess {
-        client_connection,
-        original: original_connection,
-        replacement: replacement_connection,
+        .await
+        .expect("client connection");
+    let access = FixtureAccess {
+        connection: client_connection,
         reporter: FailureReporter::new(Arc::new(NoopSink)),
-        lookups: AtomicUsize::new(0),
+        enabled: true,
     };
-    PeerHandoverFixture { client: TinyDocsClient::new(ModuleClient::new(access)), original, replacement, _broker: broker }
+    PeerHandoverFixture {
+        client: TinyDocsClient::new(ModuleClient::new(access)),
+        original,
+        replacement,
+        _broker: broker,
+    }
 }
 
 fn digest(bytes: &[u8]) -> String {
@@ -497,41 +542,160 @@ async fn held_docx_uses_the_peer_that_owns_its_generation() {
     let result = fixture.client.generate_docx(&document_spec()).await;
     let replacement_control = fixture.client.generate_docx(&document_spec()).await;
 
-    // This is the currently failing regression draft: object_client resolves
-    // the original peer, then the producer call sees the replacement alias.
-    // A per-operation pin must keep both calls on the original broker peer.
-    assert_eq!(result.expect("generation and held output stay on original"), b"original bytes");
-    assert_eq!(replacement_control.expect("replacement remains usable at the same object path"), b"replacement bytes");
+    // The producer transfers the well-known name only after retaining its
+    // output. The later read and release must still reach that same peer.
+    assert_eq!(
+        result.expect("generation and held output stay on original"),
+        b"original bytes"
+    );
+    assert_eq!(
+        replacement_control.expect("replacement remains usable at the same object path"),
+        b"replacement bytes"
+    );
     let original = fixture.original.lock().expect("original state lock");
     let replacement = fixture.replacement.lock().expect("replacement state lock");
-    assert_eq!(original.calls.iter().filter(|call| call.member == methods::GENERATE_DOCX).count(), 1);
-    assert_eq!(original.calls.iter().filter(|call| call.member == methods::READ_OUTPUT).count(), 1);
-    assert_eq!(original.calls.iter().filter(|call| call.member == methods::RELEASE_OUTPUT).count(), 1);
-    assert_eq!(replacement.calls.iter().filter(|call| call.member == methods::GENERATE_DOCX).count(), 2);
-    assert!(replacement.calls.iter().any(|call| call.member == methods::READ_OUTPUT));
-    assert!(replacement.calls.iter().any(|call| call.member == methods::RELEASE_OUTPUT));
+    assert_eq!(
+        original
+            .calls
+            .iter()
+            .filter(|call| call.member == methods::GENERATE_DOCX)
+            .count(),
+        1
+    );
+    assert_eq!(
+        original
+            .calls
+            .iter()
+            .filter(|call| call.member == methods::READ_OUTPUT)
+            .count(),
+        1
+    );
+    assert_eq!(
+        original
+            .calls
+            .iter()
+            .filter(|call| call.member == methods::RELEASE_OUTPUT)
+            .count(),
+        1
+    );
+    assert_eq!(
+        replacement
+            .calls
+            .iter()
+            .filter(|call| call.member == methods::GENERATE_DOCX)
+            .count(),
+        1
+    );
+    assert_eq!(
+        replacement
+            .calls
+            .iter()
+            .filter(|call| call.member == methods::READ_OUTPUT)
+            .count(),
+        1
+    );
+    assert_eq!(
+        replacement
+            .calls
+            .iter()
+            .filter(|call| call.member == methods::RELEASE_OUTPUT)
+            .count(),
+        1
+    );
 }
 
 #[tokio::test]
 async fn held_pptx_upload_and_output_use_the_peer_that_owns_generation() {
     let fixture = peer_handover_fixture().await;
-    let deck = tinydocs_bus::WirePresentationSpec { title: "Deck".into(), author: None, theme: None, slides: vec![] };
+    let deck = tinydocs_bus::WirePresentationSpec {
+        title: "Deck".into(),
+        author: None,
+        theme: None,
+        slides: vec![],
+    };
     let images = b"fresh image bytes";
     let result = fixture.client.generate_pptx(&deck, images).await;
     let replacement_control = fixture.client.generate_pptx(&deck, images).await;
 
-    assert_eq!(result.expect("streamed generation and held output stay on original"), b"original bytes");
-    assert_eq!(replacement_control.expect("replacement remains usable at the same object path"), b"replacement bytes");
+    assert_eq!(
+        result.expect("streamed generation and held output stay on original"),
+        b"original bytes"
+    );
+    assert_eq!(
+        replacement_control.expect("replacement remains usable at the same object path"),
+        b"replacement bytes"
+    );
     let original = fixture.original.lock().expect("original state lock");
     let replacement = fixture.replacement.lock().expect("replacement state lock");
-    assert_eq!(original.calls.iter().filter(|call| call.member == methods::GENERATE_PPTX).count(), 1);
-    assert_eq!(original.calls.iter().filter(|call| call.member == methods::READ_OUTPUT).count(), 1);
-    assert_eq!(original.calls.iter().filter(|call| call.member == methods::RELEASE_OUTPUT).count(), 1);
-    assert_eq!(original.input_streams.get(methods::GENERATE_PPTX).map(Vec::as_slice), Some(images.as_slice()));
-    assert_eq!(replacement.calls.iter().filter(|call| call.member == methods::GENERATE_PPTX).count(), 2);
-    assert_eq!(replacement.input_streams.get(methods::GENERATE_PPTX).map(Vec::as_slice), Some(images.as_slice()));
-    assert!(replacement.calls.iter().any(|call| call.member == methods::READ_OUTPUT));
-    assert!(replacement.calls.iter().any(|call| call.member == methods::RELEASE_OUTPUT));
+    assert_eq!(
+        original
+            .calls
+            .iter()
+            .filter(|call| call.member == methods::GENERATE_PPTX)
+            .count(),
+        1
+    );
+    assert_eq!(
+        original
+            .calls
+            .iter()
+            .filter(|call| call.member == methods::READ_OUTPUT)
+            .count(),
+        1
+    );
+    assert_eq!(
+        original
+            .calls
+            .iter()
+            .filter(|call| call.member == methods::RELEASE_OUTPUT)
+            .count(),
+        1
+    );
+    assert_eq!(
+        original
+            .input_streams
+            .get(methods::GENERATE_PPTX)
+            .map(Vec::as_slice),
+        Some(images.as_slice())
+    );
+    assert_eq!(
+        replacement
+            .calls
+            .iter()
+            .filter(|call| call.member == methods::GENERATE_PPTX)
+            .count(),
+        1
+    );
+    assert_eq!(
+        replacement
+            .input_streams
+            .get(methods::GENERATE_PPTX)
+            .map(Vec::as_slice),
+        Some(images.as_slice())
+    );
+    assert_eq!(
+        replacement
+            .calls
+            .iter()
+            .filter(|call| call.member == methods::READ_OUTPUT)
+            .count(),
+        1
+    );
+    assert_eq!(
+        replacement
+            .calls
+            .iter()
+            .filter(|call| call.member == methods::RELEASE_OUTPUT)
+            .count(),
+        1
+    );
+    assert_eq!(
+        original
+            .input_streams
+            .get(methods::GENERATE_PPTX)
+            .map(Vec::as_slice),
+        Some(images.as_slice())
+    );
 }
 
 #[tokio::test]
