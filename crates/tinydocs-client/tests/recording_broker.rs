@@ -542,7 +542,7 @@ async fn peer_handover_fixture() -> PeerHandoverFixture {
         enabled: true,
     };
     PeerHandoverFixture {
-        client: TinyDocsClient::new(ModuleClient::new(access)),
+        client: TinyDocsClient::new(ModuleClient::new(access).with_timeout(Duration::from_secs(2))),
         original,
         replacement,
         _broker: broker,
