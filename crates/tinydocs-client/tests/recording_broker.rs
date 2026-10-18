@@ -36,8 +36,8 @@ static RECORD: ReleaseRecord = ReleaseRecord {
     id: MODULE_ID,
     bus_name: BUS_NAME,
     object_path: OBJECT_PATH,
-    version: "0.2.4",
-    release_url: "https://github.com/tinyhumansai/tinydocs/releases/tag/v0.2.4",
+    version: "0.2.5",
+    release_url: "https://github.com/tinyhumansai/tinydocs/releases/tag/v0.2.5",
     assets: &[],
 };
 
