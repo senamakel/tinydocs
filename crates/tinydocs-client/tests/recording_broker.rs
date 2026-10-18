@@ -544,63 +544,54 @@ async fn held_docx_uses_the_peer_that_owns_its_generation() {
 
     // The producer transfers the well-known name only after retaining its
     // output. The later read and release must still reach that same peer.
-    assert_eq!(
-        result.expect("generation and held output stay on original"),
-        b"original bytes"
-    );
-    assert_eq!(
-        replacement_control.expect("replacement remains usable at the same object path"),
-        b"replacement bytes"
-    );
+    let original_bytes = result
+        .as_ref()
+        .is_ok_and(|bytes| bytes == b"original bytes");
+    let replacement_bytes = replacement_control
+        .as_ref()
+        .is_ok_and(|bytes| bytes == b"replacement bytes");
     let original = fixture.original.lock().expect("original state lock");
     let replacement = fixture.replacement.lock().expect("replacement state lock");
-    assert_eq!(
+    let original_counts = (
         original
             .calls
             .iter()
             .filter(|call| call.member == methods::GENERATE_DOCX)
             .count(),
-        1
-    );
-    assert_eq!(
         original
             .calls
             .iter()
             .filter(|call| call.member == methods::READ_OUTPUT)
             .count(),
-        1
-    );
-    assert_eq!(
         original
             .calls
             .iter()
             .filter(|call| call.member == methods::RELEASE_OUTPUT)
             .count(),
-        1
     );
-    assert_eq!(
+    let replacement_counts = (
         replacement
             .calls
             .iter()
             .filter(|call| call.member == methods::GENERATE_DOCX)
             .count(),
-        1
-    );
-    assert_eq!(
         replacement
             .calls
             .iter()
             .filter(|call| call.member == methods::READ_OUTPUT)
             .count(),
-        1
-    );
-    assert_eq!(
         replacement
             .calls
             .iter()
             .filter(|call| call.member == methods::RELEASE_OUTPUT)
             .count(),
-        1
+    );
+    assert!(
+        original_bytes
+            && replacement_bytes
+            && original_counts == (1, 1, 1)
+            && replacement_counts == (1, 1, 1),
+        "peer-hop DOCX: original_bytes={original_bytes}, replacement_control_bytes={replacement_bytes}, original generate/read/release={original_counts:?}, replacement generate/read/release={replacement_counts:?}"
     );
 }
 
@@ -617,84 +608,66 @@ async fn held_pptx_upload_and_output_use_the_peer_that_owns_generation() {
     let result = fixture.client.generate_pptx(&deck, images).await;
     let replacement_control = fixture.client.generate_pptx(&deck, images).await;
 
-    assert_eq!(
-        result.expect("streamed generation and held output stay on original"),
-        b"original bytes"
-    );
-    assert_eq!(
-        replacement_control.expect("replacement remains usable at the same object path"),
-        b"replacement bytes"
-    );
+    let original_bytes = result
+        .as_ref()
+        .is_ok_and(|bytes| bytes == b"original bytes");
+    let replacement_bytes = replacement_control
+        .as_ref()
+        .is_ok_and(|bytes| bytes == b"replacement bytes");
     let original = fixture.original.lock().expect("original state lock");
     let replacement = fixture.replacement.lock().expect("replacement state lock");
-    assert_eq!(
+    let original_counts = (
         original
             .calls
             .iter()
             .filter(|call| call.member == methods::GENERATE_PPTX)
             .count(),
-        1
-    );
-    assert_eq!(
         original
             .calls
             .iter()
             .filter(|call| call.member == methods::READ_OUTPUT)
             .count(),
-        1
-    );
-    assert_eq!(
         original
             .calls
             .iter()
             .filter(|call| call.member == methods::RELEASE_OUTPUT)
             .count(),
-        1
     );
-    assert_eq!(
-        original
-            .input_streams
-            .get(methods::GENERATE_PPTX)
-            .map(Vec::as_slice),
-        Some(images.as_slice())
-    );
-    assert_eq!(
+    let replacement_counts = (
         replacement
             .calls
             .iter()
             .filter(|call| call.member == methods::GENERATE_PPTX)
             .count(),
-        1
-    );
-    assert_eq!(
-        replacement
-            .input_streams
-            .get(methods::GENERATE_PPTX)
-            .map(Vec::as_slice),
-        Some(images.as_slice())
-    );
-    assert_eq!(
         replacement
             .calls
             .iter()
             .filter(|call| call.member == methods::READ_OUTPUT)
             .count(),
-        1
-    );
-    assert_eq!(
         replacement
             .calls
             .iter()
             .filter(|call| call.member == methods::RELEASE_OUTPUT)
             .count(),
-        1
     );
-    assert_eq!(
-        original
-            .input_streams
-            .get(methods::GENERATE_PPTX)
-            .map(Vec::as_slice),
-        Some(images.as_slice())
+    let original_stream = original
+        .input_streams
+        .get(methods::GENERATE_PPTX)
+        .map(Vec::as_slice)
+        == Some(images.as_slice());
+    let replacement_stream = replacement
+        .input_streams
+        .get(methods::GENERATE_PPTX)
+        .map(Vec::as_slice)
+        == Some(images.as_slice());
+    assert!(
+        original_bytes
+            && replacement_bytes
+            && original_counts == (1, 1, 1)
+            && replacement_counts == (1, 1, 1)
+            && original_stream
+            && replacement_stream,
+        "peer-hop PPTX: original_bytes={original_bytes}, replacement_control_bytes={replacement_bytes}, original generate/read/release={original_counts:?}, replacement generate/read/release={replacement_counts:?}, original_stream={original_stream}, replacement_stream={replacement_stream}"
     );
 }
 
