@@ -243,9 +243,9 @@ impl RecordingService {
             }
             methods::EXTRACT_TEXT => {
                 self.read_stream_arg(&args, 0, member).await?;
-                Ok(serde_json::to_value(
-                    self.hold_for(member, b"extracted text"),
-                )?)
+                let output = self.hold_for(member, b"extracted text");
+                self.handover_alias().await?;
+                Ok(serde_json::to_value(output)?)
             }
             methods::EXTRACT_DOCUMENT => {
                 self.read_stream_arg(&args, 1, member).await?;
@@ -263,9 +263,9 @@ impl RecordingService {
             }
             methods::CONVERT_MARKDOWN => {
                 self.read_stream_arg(&args, 1, member).await?;
-                Ok(serde_json::to_value(
-                    self.hold_for(member, b"# converted\n"),
-                )?)
+                let output = self.hold_for(member, b"# converted\n");
+                self.handover_alias().await?;
+                Ok(serde_json::to_value(output)?)
             }
             methods::INSPECT_IMAGE => {
                 self.read_stream_arg(&args, 0, member).await?;
@@ -275,6 +275,7 @@ impl RecordingService {
                 self.read_stream_arg(&args, 1, member).await?;
                 let first = self.hold(b"page one".to_vec());
                 let second = self.hold(b"page two".to_vec());
+                self.handover_alias().await?;
                 Ok(json!({
                     "page_count": 3,
                     "pages": [
@@ -491,6 +492,22 @@ async fn peer_handover_fixture() -> PeerHandoverFixture {
     replacement_state.output_overrides.insert(
         methods::GENERATE_PPTX.into(),
         b"replacement pptx bytes".to_vec(),
+    );
+    original_state.output_overrides.insert(
+        methods::EXTRACT_TEXT.into(),
+        b"original text".to_vec(),
+    );
+    replacement_state.output_overrides.insert(
+        methods::EXTRACT_TEXT.into(),
+        b"replacement text".to_vec(),
+    );
+    original_state.output_overrides.insert(
+        methods::CONVERT_MARKDOWN.into(),
+        b"original markdown\n".to_vec(),
+    );
+    replacement_state.output_overrides.insert(
+        methods::CONVERT_MARKDOWN.into(),
+        b"replacement markdown\n".to_vec(),
     );
     let original = Arc::new(Mutex::new(original_state));
     let replacement = Arc::new(Mutex::new(replacement_state));
