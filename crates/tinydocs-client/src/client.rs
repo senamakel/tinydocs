@@ -6,8 +6,7 @@ use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use sha2::{Digest, Sha256};
 use tinybus::module::{
-    ModuleCallError, ModuleCallFailure, ModuleClient, PinnedModuleClient,
-    PinnedModuleObjectClient,
+    ModuleCallError, ModuleCallFailure, ModuleClient, PinnedModuleClient, PinnedModuleObjectClient,
 };
 use tinydocs_bus::names::methods;
 use tinydocs_bus::spec::presentation::MAX_IMAGE_BYTES;

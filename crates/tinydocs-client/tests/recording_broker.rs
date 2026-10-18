@@ -493,14 +493,12 @@ async fn peer_handover_fixture() -> PeerHandoverFixture {
         methods::GENERATE_PPTX.into(),
         b"replacement pptx bytes".to_vec(),
     );
-    original_state.output_overrides.insert(
-        methods::EXTRACT_TEXT.into(),
-        b"original text".to_vec(),
-    );
-    replacement_state.output_overrides.insert(
-        methods::EXTRACT_TEXT.into(),
-        b"replacement text".to_vec(),
-    );
+    original_state
+        .output_overrides
+        .insert(methods::EXTRACT_TEXT.into(), b"original text".to_vec());
+    replacement_state
+        .output_overrides
+        .insert(methods::EXTRACT_TEXT.into(), b"replacement text".to_vec());
     original_state.output_overrides.insert(
         methods::CONVERT_MARKDOWN.into(),
         b"original markdown\n".to_vec(),
@@ -695,6 +693,100 @@ async fn held_pptx_upload_and_output_use_the_peer_that_owns_generation() {
             && original_stream
             && replacement_stream,
         "peer-hop PPTX: original_bytes={original_bytes}, replacement_control_bytes={replacement_bytes}, original generate/read/release={original_counts:?}, replacement generate/read/release={replacement_counts:?}, original_stream={original_stream}, replacement_stream={replacement_stream}"
+    );
+}
+
+fn output_call_counts(state: &State, producer: &str) -> (usize, usize, usize) {
+    (
+        state
+            .calls
+            .iter()
+            .filter(|call| call.member == producer)
+            .count(),
+        state
+            .calls
+            .iter()
+            .filter(|call| call.member == methods::READ_OUTPUT)
+            .count(),
+        state
+            .calls
+            .iter()
+            .filter(|call| call.member == methods::RELEASE_OUTPUT)
+            .count(),
+    )
+}
+
+#[tokio::test]
+async fn streamed_text_outputs_stay_with_their_producer_after_alias_handover() {
+    for (member, original_text, replacement_text) in [
+        (methods::EXTRACT_TEXT, "original text", "replacement text"),
+        (
+            methods::CONVERT_MARKDOWN,
+            "original markdown\n",
+            "replacement markdown\n",
+        ),
+    ] {
+        let fixture = peer_handover_fixture().await;
+        let first = if member == methods::EXTRACT_TEXT {
+            fixture.client.extract_text(b"PDF input").await
+        } else {
+            fixture
+                .client
+                .convert_markdown(DocumentFormat::Pdf, b"PDF input")
+                .await
+        };
+        let replacement_control = if member == methods::EXTRACT_TEXT {
+            fixture.client.extract_text(b"PDF input").await
+        } else {
+            fixture
+                .client
+                .convert_markdown(DocumentFormat::Pdf, b"PDF input")
+                .await
+        };
+        let original_bytes = first.as_ref().is_ok_and(|text| text == original_text);
+        let replacement_bytes = replacement_control
+            .as_ref()
+            .is_ok_and(|text| text == replacement_text);
+        let original = fixture.original.lock().expect("original state lock");
+        let replacement = fixture.replacement.lock().expect("replacement state lock");
+        let original_counts = output_call_counts(&original, member);
+        let replacement_counts = output_call_counts(&replacement, member);
+        assert!(
+            original_bytes
+                && replacement_bytes
+                && original_counts == (1, 1, 1)
+                && replacement_counts == (1, 1, 1),
+            "peer-hop {member}: original_bytes={original_bytes}, replacement_control_bytes={replacement_bytes}, original producer/read/release={original_counts:?}, replacement producer/read/release={replacement_counts:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn multi_page_render_outputs_stay_with_their_producer_after_alias_handover() {
+    let fixture = peer_handover_fixture().await;
+    let spec = RenderPdfSpec {
+        pages: vec![1, 3],
+        max_dimension: 256,
+        max_total_pixels: 65_536,
+        max_output_bytes: 1_048_576,
+    };
+    let first = fixture.client.render_pdf(b"PDF input", &spec).await;
+    let replacement_control = fixture.client.render_pdf(b"PDF input", &spec).await;
+    let expected = vec![(1, b"page one".to_vec()), (3, b"page two".to_vec())];
+    let original_pages = first.as_ref().is_ok_and(|pages| pages == &expected);
+    let replacement_pages = replacement_control
+        .as_ref()
+        .is_ok_and(|pages| pages == &expected);
+    let original = fixture.original.lock().expect("original state lock");
+    let replacement = fixture.replacement.lock().expect("replacement state lock");
+    let original_counts = output_call_counts(&original, methods::RENDER_PDF);
+    let replacement_counts = output_call_counts(&replacement, methods::RENDER_PDF);
+    assert!(
+        original_pages
+            && replacement_pages
+            && original_counts == (1, 2, 2)
+            && replacement_counts == (1, 2, 2),
+        "peer-hop RenderPdf: original_pages={original_pages}, replacement_control_pages={replacement_pages}, original render/read/release={original_counts:?}, replacement render/read/release={replacement_counts:?}"
     );
 }
 

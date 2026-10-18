@@ -5,12 +5,14 @@ module. It translates contract methods and held outputs into typed Rust calls.
 It does not load modules, decide readiness, configure reporting, or choose
 deadlines; those choices belong to the embedding host.
 
-Ordinary typed calls use `ModuleClient::call_detailed`. Upload operations use
-`ModuleClient::call_with_stream_detailed`, which keeps readiness, registry
-validation, timeouts, and failure reporting inside the SDK. Held-output reads
-use `ModuleObjectClient::call_detailed` so their wire errors retain the same
-contract distinctions. The host continues to own module loading and transport
-lifecycle.
+Each operation that produces a held output binds an ordinary
+`PinnedModuleClient` for that operation. Its producer call, optional streamed
+upload, output reads, releases, and cancellation cleanup stay with the same
+serving peer even if the public module alias changes during the operation.
+Binding does not claim native artifact proof. Stateless `ExtractDocument` and
+`InspectImage` calls continue to resolve through the host's `ModuleClient`
+without retaining a peer beyond the call. The host continues to own module
+loading and transport lifecycle.
 
 `DocumentCallError` keeps unavailable, invalid-input, and execution failures
 distinct. Its `Debug` and `Display` forms expose only the category. A caller
