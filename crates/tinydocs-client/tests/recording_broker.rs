@@ -237,7 +237,7 @@ impl RecordingService {
                 if !args[1].is_null() {
                     self.read_stream_arg(&args, 1, member).await?;
                 }
-                let output = self.hold(b"pptx bytes".to_vec());
+                let output = self.hold_for(member, b"pptx bytes");
                 self.handover_alias().await?;
                 Ok(serde_json::to_value(output)?)
             }
@@ -475,15 +475,23 @@ async fn peer_handover_fixture() -> PeerHandoverFixture {
         Connection::connect(bus.connect().await.expect("replacement transport"))
             .await
             .expect("replacement connection");
-    let original = Arc::new(Mutex::new(State {
+    let mut original_state = State {
         generated_bytes: b"original bytes".to_vec(),
         handover_to: Some(replacement_connection.clone()),
         ..State::default()
-    }));
-    let replacement = Arc::new(Mutex::new(State {
+    };
+    original_state
+        .output_overrides
+        .insert(methods::GENERATE_PPTX.into(), b"original pptx bytes".to_vec());
+    let mut replacement_state = State {
         generated_bytes: b"replacement bytes".to_vec(),
         ..State::default()
-    }));
+    };
+    replacement_state
+        .output_overrides
+        .insert(methods::GENERATE_PPTX.into(), b"replacement pptx bytes".to_vec());
+    let original = Arc::new(Mutex::new(original_state));
+    let replacement = Arc::new(Mutex::new(replacement_state));
     for (connection, state) in [
         (&original_connection, original.clone()),
         (&replacement_connection, replacement.clone()),
@@ -549,7 +557,7 @@ async fn held_docx_uses_the_peer_that_owns_its_generation() {
         .is_ok_and(|bytes| bytes == b"original bytes");
     let replacement_bytes = replacement_control
         .as_ref()
-        .is_ok_and(|bytes| bytes == b"replacement bytes");
+        .is_ok_and(|bytes| bytes == b"replacement pptx bytes");
     let original = fixture.original.lock().expect("original state lock");
     let replacement = fixture.replacement.lock().expect("replacement state lock");
     let original_counts = (
