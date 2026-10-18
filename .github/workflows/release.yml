@@ -61,7 +61,7 @@ jobs:
     needs: [resolve, source-packages]
     permissions:
       contents: write
-    uses: tinyhumansai/.github/.github/workflows/module-release.yml@4adc1080fb495098e7af1aade82ed7e6e3c69bb7
+    uses: tinyhumansai/.github/.github/workflows/module-release.yml@1e28317c435a9c714002199e65d18a1067fa5777
     with:
       tag: ${{ needs.resolve.outputs.tag }}
       version: ${{ needs.resolve.outputs.version }}
