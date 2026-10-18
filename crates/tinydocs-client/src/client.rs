@@ -56,7 +56,7 @@ impl TinyDocsClient {
     /// specification, or fails to generate or transfer the output.
     pub async fn generate_docx(&self, spec: &DocumentSpec) -> Result<Vec<u8>, DocumentCallError> {
         let module = self.bind().await?;
-        let output = self.output_client(&module)?;
+        let output = Self::output_client(&module)?;
         let handle: OutputRef = module
             .call_detailed(methods::GENERATE_DOCX, (spec,))
             .await
@@ -80,7 +80,7 @@ impl TinyDocsClient {
         images: &[u8],
     ) -> Result<Vec<u8>, DocumentCallError> {
         let module = self.bind().await?;
-        let output = self.output_client(&module)?;
+        let output = Self::output_client(&module)?;
         let handle: OutputRef = if images.is_empty() {
             module
                 .call_detailed(
@@ -112,7 +112,7 @@ impl TinyDocsClient {
     /// decoding fails.
     pub async fn extract_text(&self, document: &[u8]) -> Result<String, DocumentCallError> {
         let module = self.bind().await?;
-        let output = self.output_client(&module)?;
+        let output = Self::output_client(&module)?;
         let handle: OutputRef = module
             .call_with_stream_detailed(
                 methods::EXTRACT_TEXT,
@@ -160,7 +160,7 @@ impl TinyDocsClient {
         document: &[u8],
     ) -> Result<String, DocumentCallError> {
         let module = self.bind().await?;
-        let output = self.output_client(&module)?;
+        let output = Self::output_client(&module)?;
         let handle: OutputRef = module
             .call_with_stream_detailed(
                 methods::CONVERT_MARKDOWN,
@@ -211,7 +211,7 @@ impl TinyDocsClient {
         spec: &RenderPdfSpec,
     ) -> Result<Vec<(u32, Vec<u8>)>, DocumentCallError> {
         let module = self.bind().await?;
-        let output = self.output_client(&module)?;
+        let output = Self::output_client(&module)?;
         let rendered: RenderedPdf = module
             .call_with_stream_detailed(
                 methods::RENDER_PDF,
@@ -257,7 +257,6 @@ impl TinyDocsClient {
     }
 
     fn output_client(
-        &self,
         module: &PinnedModuleClient,
     ) -> Result<PinnedModuleObjectClient, DocumentCallError> {
         module
