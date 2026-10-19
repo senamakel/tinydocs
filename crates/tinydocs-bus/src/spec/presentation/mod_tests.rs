@@ -254,10 +254,12 @@ fn request_validation_shares_text_limits_with_resolved_spec_validation() {
     let mut request = PresentationRequestSpec::from(&spec());
     request.title = " ".to_string();
     assert_rejects_request(&request, "title");
+    assert_request_error_matches_spec(&request);
 
     let mut request = PresentationRequestSpec::from(&spec());
     request.slides[0].body = Some("x".repeat(MAX_TEXT_CHARS + 1));
     assert_rejects_request(&request, "slides[0].body");
+    assert_request_error_matches_spec(&request);
 }
 
 #[test]
@@ -286,6 +288,45 @@ fn assert_rejects_request(request: &PresentationRequestSpec, field: &str) {
             assert_eq!(f, field, "unexpected rejected field");
         }
         other => panic!("expected InvalidInput({field}), got {other:?}"),
+    }
+}
+
+fn assert_request_error_matches_spec(request: &PresentationRequestSpec) {
+    let resolved = PresentationSpec {
+        title: request.title.clone(),
+        author: request.author.clone(),
+        theme: request.theme.clone(),
+        slides: request
+            .slides
+            .iter()
+            .map(|slide| SlideSpec {
+                title: slide.title.clone(),
+                body: slide.body.clone(),
+                bullets: slide.bullets.clone(),
+                speaker_notes: slide.speaker_notes.clone(),
+                images: vec![],
+            })
+            .collect(),
+    };
+    let request_error = request.validate().expect_err("request should be invalid");
+    let resolved_error = resolved.validate().expect_err("spec should be invalid");
+    match (request_error, resolved_error) {
+        (
+            Error::InvalidInput {
+                field: request_field,
+                reason: request_reason,
+            },
+            Error::InvalidInput {
+                field: resolved_field,
+                reason: resolved_reason,
+            },
+        ) => {
+            assert_eq!(request_field, resolved_field);
+            assert_eq!(request_reason, resolved_reason);
+        }
+        (request_error, resolved_error) => {
+            panic!("request/spec errors differ: {request_error:?} vs {resolved_error:?}")
+        }
     }
 }
 

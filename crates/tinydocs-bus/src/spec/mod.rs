@@ -41,4 +41,6 @@ pub mod presentation;
 pub use document::{DocumentSection, DocumentSpec};
 pub use image::{ImageFacts, ImageFormat};
 pub use presentation::wire::{WirePresentationSpec, WireSlideImage, WireSlideSpec};
-pub use presentation::{PresentationSpec, SlideImage, SlideSpec};
+pub use presentation::{
+    PresentationRequestSpec, PresentationSpec, SlideImage, SlideRequestSpec, SlideSpec,
+};
