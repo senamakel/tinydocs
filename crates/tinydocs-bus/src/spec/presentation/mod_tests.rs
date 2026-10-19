@@ -7,7 +7,8 @@
 
 use super::{
     MAX_BULLETS_PER_SLIDE, MAX_IMAGE_BYTES, MAX_IMAGES_PER_DECK, MAX_IMAGES_PER_SLIDE, MAX_SLIDES,
-    MAX_TEXT_CHARS, PresentationSpec, SlideImage, SlideSpec,
+    MAX_TEXT_CHARS, PresentationRequestSpec, PresentationSpec, SlideImage, SlideRequestSpec,
+    SlideSpec,
 };
 use crate::Error;
 use crate::spec::image::ImageFormat;
@@ -235,6 +236,57 @@ fn validation_keeps_encoded_image_interpretation_out_of_the_contract() {
     img.width_px += 1;
     s.slides[0].images = vec![img];
     assert!(s.validate().is_ok());
+}
+
+#[test]
+fn request_validation_rejects_excess_images_without_resolved_image_data() {
+    let mut request = PresentationRequestSpec::from(&spec());
+    request.slides[0].images = vec![None; MAX_IMAGES_PER_SLIDE + 1];
+    assert_rejects_request(&request, "slides[0].images");
+
+    let mut request = PresentationRequestSpec::from(&spec());
+    request.slides[0].images = vec![None; MAX_IMAGES_PER_DECK + 1];
+    assert_rejects_request(&request, "slides[].images");
+}
+
+#[test]
+fn request_validation_shares_text_limits_with_resolved_spec_validation() {
+    let mut request = PresentationRequestSpec::from(&spec());
+    request.title = " ".to_string();
+    assert_rejects_request(&request, "title");
+
+    let mut request = PresentationRequestSpec::from(&spec());
+    request.slides[0].body = Some("x".repeat(MAX_TEXT_CHARS + 1));
+    assert_rejects_request(&request, "slides[0].body");
+}
+
+#[test]
+fn request_validation_checks_captions_without_image_bytes() {
+    let mut request = PresentationRequestSpec::from(&spec());
+    request.slides[0].images = vec![Some("c".repeat(MAX_TEXT_CHARS + 1))];
+    assert_rejects_request(&request, "slides[0].images[0].caption");
+}
+
+#[test]
+fn request_validation_accepts_metadata_without_source_identifiers() {
+    let mut request = PresentationRequestSpec::from(&spec());
+    request.slides.push(SlideRequestSpec {
+        title: "Appendix".to_string(),
+        body: None,
+        bullets: vec!["No images required".to_string()],
+        speaker_notes: None,
+        images: vec![None],
+    });
+    assert!(request.validate().is_ok());
+}
+
+fn assert_rejects_request(request: &PresentationRequestSpec, field: &str) {
+    match request.validate() {
+        Err(Error::InvalidInput { field: f, .. }) => {
+            assert_eq!(f, field, "unexpected rejected field");
+        }
+        other => panic!("expected InvalidInput({field}), got {other:?}"),
+    }
 }
 
 #[test]
