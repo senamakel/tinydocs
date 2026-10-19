@@ -139,6 +139,193 @@ impl SlideSpec {
     }
 }
 
+/// Image metadata needed to validate a presentation request before a host
+/// resolves its image sources.
+///
+/// Each entry represents one requested image and carries only its optional
+/// caption. It deliberately contains no source identifier, path, URL, bytes,
+/// or decoded image facts.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SlideRequestSpec {
+    /// Slide title.
+    #[serde(default)]
+    pub title: String,
+    /// Body text, rendered above the bullets.
+    #[serde(default)]
+    pub body: Option<String>,
+    /// Bullets, rendered after the body text.
+    #[serde(default)]
+    pub bullets: Vec<String>,
+    /// Speaker notes attached to the slide.
+    #[serde(default)]
+    pub speaker_notes: Option<String>,
+    /// Captions in requested-image order; `None` represents an uncaptained
+    /// image without exposing the host's source reference.
+    #[serde(default)]
+    pub images: Vec<Option<String>>,
+}
+
+/// A source-agnostic presentation request suitable for validation before
+/// resolving image sources.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PresentationRequestSpec {
+    /// Deck title, rendered on a leading title slide.
+    pub title: String,
+    /// Optional author byline.
+    #[serde(default)]
+    pub author: Option<String>,
+    /// Optional theme hint.
+    #[serde(default)]
+    pub theme: Option<String>,
+    /// Content slides, in display order.
+    #[serde(default)]
+    pub slides: Vec<SlideRequestSpec>,
+}
+
+impl From<&PresentationSpec> for PresentationRequestSpec {
+    fn from(spec: &PresentationSpec) -> Self {
+        Self {
+            title: spec.title.clone(),
+            author: spec.author.clone(),
+            theme: spec.theme.clone(),
+            slides: spec
+                .slides
+                .iter()
+                .map(|slide| SlideRequestSpec {
+                    title: slide.title.clone(),
+                    body: slide.body.clone(),
+                    bullets: slide.bullets.clone(),
+                    speaker_notes: slide.speaker_notes.clone(),
+                    images: slide
+                        .images
+                        .iter()
+                        .map(|image| image.caption.clone())
+                        .collect(),
+                })
+                .collect(),
+        }
+    }
+}
+
+impl PresentationRequestSpec {
+    /// Validate all shared text and cardinality constraints without requiring
+    /// resolved image bytes. Hosts should call this before doing image IO.
+    pub fn validate(&self) -> Result<()> {
+        validate_request_fields(
+            &self.title,
+            self.author.as_deref(),
+            self.theme.as_deref(),
+            self.slides.iter().map(|slide| RequestSlideFields {
+                title: &slide.title,
+                body: slide.body.as_deref(),
+                bullets: &slide.bullets,
+                speaker_notes: slide.speaker_notes.as_deref(),
+                image_captions: slide.images.iter().map(Option::as_deref).collect(),
+            }),
+            self.slides.len(),
+        )
+    }
+}
+
+struct RequestSlideFields<'a> {
+    title: &'a str,
+    body: Option<&'a str>,
+    bullets: &'a [String],
+    speaker_notes: Option<&'a str>,
+    image_captions: Vec<Option<&'a str>>,
+}
+
+fn validate_request_fields<'a>(
+    title: &str,
+    author: Option<&str>,
+    theme: Option<&str>,
+    slides: impl Iterator<Item = RequestSlideFields<'a>>,
+    slide_count: usize,
+) -> Result<()> {
+    if title.trim().is_empty() {
+        return Err(Error::invalid_input("title", "must not be empty"));
+    }
+    check_text_len("title", title)?;
+    if let Some(author) = author {
+        check_text_len("author", author)?;
+    }
+    if let Some(theme) = theme {
+        check_text_len("theme", theme)?;
+    }
+    if slide_count == 0 {
+        return Err(Error::invalid_input(
+            "slides",
+            "must contain at least one slide",
+        ));
+    }
+    if slide_count > MAX_SLIDES {
+        return Err(Error::invalid_input(
+            "slides",
+            format!("must contain ≤ {MAX_SLIDES} slides"),
+        ));
+    }
+    let slides = slides.collect::<Vec<_>>();
+    let image_count = slides.iter().map(|slide| slide.image_captions.len()).sum::<usize>();
+    if image_count > MAX_IMAGES_PER_DECK {
+        return Err(Error::invalid_input(
+            "slides[].images",
+            format!("deck must contain ≤ {MAX_IMAGES_PER_DECK} images total"),
+        ));
+    }
+
+    for (i, slide) in slides.iter().enumerate() {
+        let is_textless = slide.title.trim().is_empty()
+            && !slide.body.is_some_and(|body| !body.trim().is_empty())
+            && !slide.bullets.iter().any(|bullet| !bullet.trim().is_empty());
+        if is_textless {
+            return Err(Error::invalid_input(
+                format!("slides[{i}]"),
+                "must have at least one of title / body / bullets",
+            ));
+        }
+        check_text_len(format!("slides[{i}].title"), slide.title)?;
+        if let Some(body) = slide.body {
+            check_text_len(format!("slides[{i}].body"), body)?;
+        }
+        if slide.bullets.len() > MAX_BULLETS_PER_SLIDE {
+            return Err(Error::invalid_input(
+                format!("slides[{i}].bullets"),
+                format!("must contain ≤ {MAX_BULLETS_PER_SLIDE} bullets"),
+            ));
+        }
+        for (b, bullet) in slide.bullets.iter().enumerate() {
+            check_text_len(format!("slides[{i}].bullets[{b}]"), bullet)?;
+        }
+        if let Some(notes) = slide.speaker_notes {
+            check_text_len(format!("slides[{i}].speaker_notes"), notes)?;
+        }
+        if slide.image_captions.len() > MAX_IMAGES_PER_SLIDE {
+            return Err(Error::invalid_input(
+                format!("slides[{i}].images"),
+                format!("must contain ≤ {MAX_IMAGES_PER_SLIDE} images"),
+            ));
+        }
+        for (m, caption) in slide.image_captions.iter().enumerate() {
+            if let Some(caption) = caption {
+                check_text_len(format!("slides[{i}].images[{m}].caption"), caption)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn check_text_len(field: impl Into<String>, value: &str) -> Result<()> {
+    if value.chars().count() > MAX_TEXT_CHARS {
+        return Err(Error::invalid_input(
+            field,
+            format!("must be ≤ {MAX_TEXT_CHARS} chars"),
+        ));
+    }
+    Ok(())
+}
+
 /// A complete `.pptx` presentation spec.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -184,81 +371,11 @@ impl PresentationSpec {
     /// limit. Fields are checked in spec order, so the reported field is stable
     /// for a given spec.
     pub fn validate(&self) -> Result<()> {
-        if self.title.trim().is_empty() {
-            return Err(Error::invalid_input("title", "must not be empty"));
-        }
-        Self::check_text_len("title", &self.title)?;
-        if let Some(author) = self.author.as_deref() {
-            Self::check_text_len("author", author)?;
-        }
-        if let Some(theme) = self.theme.as_deref() {
-            Self::check_text_len("theme", theme)?;
-        }
-        if self.slides.is_empty() {
-            return Err(Error::invalid_input(
-                "slides",
-                "must contain at least one slide",
-            ));
-        }
-        if self.slides.len() > MAX_SLIDES {
-            return Err(Error::invalid_input(
-                "slides",
-                format!("must contain ≤ {MAX_SLIDES} slides"),
-            ));
-        }
-        // Checked across the whole deck rather than per slide: the per-slide cap
-        // bounds readability, this one bounds the embedded media payload however
-        // the images are distributed.
-        if self.image_count() > MAX_IMAGES_PER_DECK {
-            return Err(Error::invalid_input(
-                "slides[].images",
-                format!("deck must contain ≤ {MAX_IMAGES_PER_DECK} images total"),
-            ));
-        }
-
+        PresentationRequestSpec::from(self).validate()?;
         for (i, slide) in self.slides.iter().enumerate() {
-            if slide.is_textless() {
-                return Err(Error::invalid_input(
-                    format!("slides[{i}]"),
-                    "must have at least one of title / body / bullets",
-                ));
-            }
-            Self::check_text_len(format!("slides[{i}].title"), &slide.title)?;
-            if let Some(body) = slide.body.as_deref() {
-                Self::check_text_len(format!("slides[{i}].body"), body)?;
-            }
-            if slide.bullets.len() > MAX_BULLETS_PER_SLIDE {
-                return Err(Error::invalid_input(
-                    format!("slides[{i}].bullets"),
-                    format!("must contain ≤ {MAX_BULLETS_PER_SLIDE} bullets"),
-                ));
-            }
-            for (b, bullet) in slide.bullets.iter().enumerate() {
-                Self::check_text_len(format!("slides[{i}].bullets[{b}]"), bullet)?;
-            }
-            if let Some(notes) = slide.speaker_notes.as_deref() {
-                Self::check_text_len(format!("slides[{i}].speaker_notes"), notes)?;
-            }
-            if slide.images.len() > MAX_IMAGES_PER_SLIDE {
-                return Err(Error::invalid_input(
-                    format!("slides[{i}].images"),
-                    format!("must contain ≤ {MAX_IMAGES_PER_SLIDE} images"),
-                ));
-            }
             for (m, image) in slide.images.iter().enumerate() {
                 Self::check_image(&format!("slides[{i}].images[{m}]"), image)?;
             }
-        }
-        Ok(())
-    }
-
-    /// Reject a text field longer than [`MAX_TEXT_CHARS`] scalar values.
-    fn check_text_len(field: impl Into<String>, value: &str) -> Result<()> {
-        if value.chars().count() > MAX_TEXT_CHARS {
-            return Err(Error::invalid_input(
-                field,
-                format!("must be ≤ {MAX_TEXT_CHARS} chars"),
-            ));
         }
         Ok(())
     }
@@ -282,9 +399,6 @@ impl PresentationSpec {
                 format!("{field}.width_px"),
                 "width and height must be greater than zero",
             ));
-        }
-        if let Some(caption) = image.caption.as_deref() {
-            Self::check_text_len(format!("{field}.caption"), caption)?;
         }
         Ok(())
     }
