@@ -282,6 +282,16 @@ fn request_validation_checks_captions_without_image_bytes() {
     let mut request = request_spec();
     request.slides[0].images = vec![Some("c".repeat(MAX_TEXT_CHARS + 1))];
     assert_rejects_request(&request, "slides[0].images[0].caption");
+
+    let mut resolved = spec();
+    let mut resolved_image = image();
+    resolved_image.caption = request.slides[0].images[0].clone();
+    resolved.slides[0].images = vec![resolved_image];
+    assert_error(
+        &resolved,
+        "slides[0].images[0].caption",
+        &format!("must be ≤ {MAX_TEXT_CHARS} chars"),
+    );
 }
 
 #[test]
