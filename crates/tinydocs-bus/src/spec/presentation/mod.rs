@@ -160,7 +160,7 @@ pub struct SlideRequestSpec {
     /// Speaker notes attached to the slide.
     #[serde(default)]
     pub speaker_notes: Option<String>,
-    /// Captions in requested-image order; `None` represents an uncaptained
+    /// Captions in requested-image order; `None` represents an uncaptioned
     /// image without exposing the host's source reference.
     #[serde(default)]
     pub images: Vec<Option<String>>,
