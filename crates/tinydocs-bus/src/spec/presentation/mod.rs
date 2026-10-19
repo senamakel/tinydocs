@@ -267,7 +267,10 @@ fn validate_request_fields<'a>(
         ));
     }
     let slides = slides.collect::<Vec<_>>();
-    let image_count = slides.iter().map(|slide| slide.image_captions.len()).sum::<usize>();
+    let image_count = slides
+        .iter()
+        .map(|slide| slide.image_captions.len())
+        .sum::<usize>();
     if image_count > MAX_IMAGES_PER_DECK {
         return Err(Error::invalid_input(
             "slides[].images",
