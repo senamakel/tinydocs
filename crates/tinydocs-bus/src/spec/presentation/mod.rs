@@ -212,6 +212,10 @@ impl From<&PresentationSpec> for PresentationRequestSpec {
 impl PresentationRequestSpec {
     /// Validate all shared text and cardinality constraints without requiring
     /// resolved image bytes. Hosts should call this before doing image IO.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::InvalidInput`] naming the first invalid field.
     pub fn validate(&self) -> Result<()> {
         validate_request_fields(
             &self.title,
@@ -280,7 +284,7 @@ fn validate_request_fields<'a>(
 
     for (i, slide) in slides.iter().enumerate() {
         let is_textless = slide.title.trim().is_empty()
-            && !slide.body.is_some_and(|body| !body.trim().is_empty())
+            && slide.body.is_none_or(|body| body.trim().is_empty())
             && !slide.bullets.iter().any(|bullet| !bullet.trim().is_empty());
         if is_textless {
             return Err(Error::invalid_input(
