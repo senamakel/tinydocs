@@ -37,8 +37,13 @@ version = "0.2.5"
 tinydocs-bus = { version = "0.2.5", path = "crates/tinydocs-bus" }
 # OOXML `.docx` synthesis. Optional: exclusive to the `docx` feature so a host
 # that only needs extraction does not pull the writer stack.
+# The exact source revision supplies ZIP 9 compatibility; v0.4.23 is not yet a
+# crates.io release.
 docx-rs = { git = "https://github.com/bokuweb/docx-rs", rev = "71df69c82ea14d777ab0c0e7236b08ffbacef31d", version = "0.4.23", optional = true }
 # OOXML `.pptx` synthesis. Optional: exclusive to the `pptx` feature.
+#
+# The exact v0.3.0 source revision supplies ZIP 9 compatibility; it is not a
+# crates.io release.
 #
 # Default features are ON, and not by choice. `pdf-native` exists to export a
 # deck as PDF and pulls `pdfrs` -> `syntect` -> `yaml-rust`, which is a syntax
@@ -60,10 +65,12 @@ ppt-rs = { git = "https://github.com/yingkitw/ppt-rs", rev = "8ef93521bc0c83aee3
 pdf-extract = { version = "0.12", optional = true }
 
 # Bounded OOXML intake reads only selected XML parts, never extracts files.
+# Keep the writer, reader, and generation-test ZIP types on one ZIP 9 identity.
 zip = { version = "9", default-features = false, features = ["deflate"], optional = true }
 # Streaming XML events avoid building attacker-controlled DOM trees.
 quick-xml = { version = "0.41", optional = true }
-# Workbook row conversion for document-memory Markdown; implementation only.
+# Workbook row conversion for document-memory Markdown; the ZIP 9-compatible
+# release shares the workspace's ZIP type identity.
 calamine = { version = "0.37", optional = true }
 # Pure Rust PDF rasterization, isolated from the default extraction build.
 hayro = { version = "0.5", optional = true }
