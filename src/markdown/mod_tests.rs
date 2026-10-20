@@ -27,7 +27,7 @@ fn invalid_utf8_member_name(mut bytes: Vec<u8>) -> Vec<u8> {
     let central = bytes
         .windows(4)
         .position(|window| window == b"PK\x01\x02")
-        .expect("fixture contains a central-directory entry");
+        .unwrap();
     let central_flags = u16::from_le_bytes([bytes[central + 8], bytes[central + 9]]) | (1 << 11);
     bytes[central + 8..central + 10].copy_from_slice(&central_flags.to_le_bytes());
     bytes[central + 46] = 0xff;
