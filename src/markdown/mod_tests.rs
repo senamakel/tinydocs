@@ -19,6 +19,21 @@ fn package(parts: &[(&str, &str)]) -> Vec<u8> {
     buffer.into_inner()
 }
 
+fn invalid_utf8_member_name(mut bytes: Vec<u8>) -> Vec<u8> {
+    let local_flags = u16::from_le_bytes([bytes[6], bytes[7]]) | (1 << 11);
+    bytes[6..8].copy_from_slice(&local_flags.to_le_bytes());
+    bytes[30] = 0xff;
+
+    let central = bytes
+        .windows(4)
+        .position(|window| window == b"PK\x01\x02")
+        .unwrap();
+    let central_flags = u16::from_le_bytes([bytes[central + 8], bytes[central + 9]]) | (1 << 11);
+    bytes[central + 8..central + 10].copy_from_slice(&central_flags.to_le_bytes());
+    bytes[central + 46] = 0xff;
+    bytes
+}
+
 /// A Word document whose body is `paragraphs`, each a list of text runs.
 fn docx(paragraphs: &[&[&str]]) -> Vec<u8> {
     let mut body = String::new();
@@ -196,6 +211,20 @@ fn a_deck_reads_its_slides_in_numeric_order() {
     let bytes = pptx(&[(10, "Tenth"), (2, "Second"), (1, "First")]);
     let converted = convert("deck.pptx", &bytes).unwrap();
     assert_eq!(converted, "First\n\nSecond\n\nTenth");
+}
+
+#[test]
+fn cp437_fallback_does_not_mistake_a_non_utf8_name_for_a_pptx_slide() {
+    let bytes = invalid_utf8_member_name(package(&[(
+        "ppt/slides/slide1.xml",
+        "<a:p xmlns:a='a'><a:r><a:t>visible</a:t></a:r></a:p>",
+    )]));
+
+    let Error::ExtractionFailed { detail } = convert("presentation.pptx", &bytes).unwrap_err()
+    else {
+        panic!("unexpected error type");
+    };
+    assert_eq!(detail, "converting Pptx produced no text");
 }
 
 #[test]

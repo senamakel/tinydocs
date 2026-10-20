@@ -7,7 +7,8 @@
 
 use super::{
     MAX_BULLETS_PER_SLIDE, MAX_IMAGE_BYTES, MAX_IMAGES_PER_DECK, MAX_IMAGES_PER_SLIDE, MAX_SLIDES,
-    MAX_TEXT_CHARS, PresentationSpec, SlideImage, SlideSpec,
+    MAX_TEXT_CHARS, PresentationRequestSpec, PresentationSpec, SlideImage, SlideRequestSpec,
+    SlideSpec,
 };
 use crate::Error;
 use crate::spec::image::ImageFormat;
@@ -30,6 +31,21 @@ fn spec() -> PresentationSpec {
         author: Some("Alice".to_string()),
         theme: Some("plain".to_string()),
         slides: vec![slide()],
+    }
+}
+
+fn request_spec() -> PresentationRequestSpec {
+    PresentationRequestSpec {
+        title: "Quarterly Review".to_string(),
+        author: Some("Alice".to_string()),
+        theme: Some("plain".to_string()),
+        slides: vec![SlideRequestSpec {
+            title: "Overview".to_string(),
+            body: Some("The situation so far.".to_string()),
+            bullets: vec!["A bullet".to_string()],
+            speaker_notes: Some("Keep it short.".to_string()),
+            images: vec![],
+        }],
     }
 }
 
@@ -235,6 +251,153 @@ fn validation_keeps_encoded_image_interpretation_out_of_the_contract() {
     img.width_px += 1;
     s.slides[0].images = vec![img];
     assert!(s.validate().is_ok());
+}
+
+#[test]
+fn request_validation_rejects_excess_images_without_resolved_image_data() {
+    let mut request = request_spec();
+    request.slides[0].images = vec![None; MAX_IMAGES_PER_SLIDE + 1];
+    assert_rejects_request(&request, "slides[0].images");
+
+    let mut request = request_spec();
+    request.slides[0].images = vec![None; MAX_IMAGES_PER_DECK + 1];
+    assert_rejects_request(&request, "slides[].images");
+}
+
+#[test]
+fn request_validation_shares_text_limits_with_resolved_spec_validation() {
+    let mut request = request_spec();
+    request.title = " ".to_string();
+    assert_rejects_request(&request, "title");
+    assert_request_error_matches_spec(&request);
+
+    let mut request = request_spec();
+    request.slides[0].body = Some("x".repeat(MAX_TEXT_CHARS + 1));
+    assert_rejects_request(&request, "slides[0].body");
+    assert_request_error_matches_spec(&request);
+}
+
+#[test]
+fn request_validation_checks_captions_without_image_bytes() {
+    let mut request = request_spec();
+    request.slides[0].images = vec![Some("c".repeat(MAX_TEXT_CHARS + 1))];
+    assert_rejects_request(&request, "slides[0].images[0].caption");
+
+    let mut resolved = spec();
+    let mut resolved_image = image();
+    resolved_image.caption = request.slides[0].images[0].clone();
+    resolved.slides[0].images = vec![resolved_image];
+    assert_error(
+        &resolved,
+        "slides[0].images[0].caption",
+        &format!("must be ≤ {MAX_TEXT_CHARS} chars"),
+    );
+}
+
+#[test]
+fn request_validation_accepts_metadata_without_source_identifiers() {
+    let mut request = request_spec();
+    request.slides.push(SlideRequestSpec {
+        title: "Appendix".to_string(),
+        body: None,
+        bullets: vec!["No images required".to_string()],
+        speaker_notes: None,
+        images: vec![None],
+    });
+    assert!(request.validate().is_ok());
+}
+
+#[test]
+fn request_validation_checks_collection_bounds_before_entries() {
+    let mut request = request_spec();
+    request.slides = vec![
+        SlideRequestSpec {
+            title: String::new(),
+            body: None,
+            bullets: vec![],
+            speaker_notes: None,
+            images: vec![],
+        };
+        MAX_SLIDES + 1
+    ];
+    assert_rejects_request(&request, "slides");
+
+    let mut request = request_spec();
+    request.slides[0].images = vec![Some("c".repeat(MAX_TEXT_CHARS + 1)); MAX_IMAGES_PER_DECK + 1];
+    assert_rejects_request(&request, "slides[].images");
+}
+
+#[test]
+fn resolved_validation_preserves_first_error_order_for_image_and_later_slide() {
+    let mut s = spec();
+    let mut invalid_image = image();
+    invalid_image.bytes.clear();
+    invalid_image.caption = Some("c".repeat(MAX_TEXT_CHARS + 1));
+    s.slides[0].images = vec![invalid_image];
+    assert_error(&s, "slides[0].images[0].bytes", "must not be empty");
+
+    let mut s = spec();
+    let mut invalid_image = image();
+    invalid_image.bytes.clear();
+    s.slides[0].images = vec![invalid_image];
+    s.slides.push(SlideSpec {
+        title: String::new(),
+        body: None,
+        bullets: vec![],
+        speaker_notes: None,
+        images: vec![],
+    });
+    assert_error(&s, "slides[0].images[0].bytes", "must not be empty");
+}
+
+fn assert_rejects_request(request: &PresentationRequestSpec, field: &str) {
+    match request.validate() {
+        Err(Error::InvalidInput { field: f, .. }) => {
+            assert_eq!(f, field, "unexpected rejected field");
+        }
+        other => panic!("expected InvalidInput({field}), got {other:?}"),
+    }
+}
+
+fn assert_error(spec: &PresentationSpec, expected_field: &str, expected_reason: &str) {
+    match spec.validate() {
+        Err(Error::InvalidInput { field, reason }) => {
+            assert_eq!(field, expected_field);
+            assert_eq!(reason, expected_reason);
+        }
+        other => panic!("expected InvalidInput({expected_field}), got {other:?}"),
+    }
+}
+
+fn assert_request_error_matches_spec(request: &PresentationRequestSpec) {
+    let mut resolved = spec();
+    resolved.title = request.title.clone();
+    resolved.author = request.author.clone();
+    resolved.theme = request.theme.clone();
+    resolved.slides[0].title = request.slides[0].title.clone();
+    resolved.slides[0].body = request.slides[0].body.clone();
+    resolved.slides[0].bullets = request.slides[0].bullets.clone();
+    resolved.slides[0].speaker_notes = request.slides[0].speaker_notes.clone();
+    let request_error = request.validate().expect_err("request should be invalid");
+    let resolved_error = resolved.validate().expect_err("spec should be invalid");
+    match (request_error, resolved_error) {
+        (
+            Error::InvalidInput {
+                field: request_field,
+                reason: request_reason,
+            },
+            Error::InvalidInput {
+                field: resolved_field,
+                reason: resolved_reason,
+            },
+        ) => {
+            assert_eq!(request_field, resolved_field);
+            assert_eq!(request_reason, resolved_reason);
+        }
+        (request_error, resolved_error) => {
+            panic!("request/spec errors differ: {request_error:?} vs {resolved_error:?}")
+        }
+    }
 }
 
 #[test]
