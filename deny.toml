@@ -52,8 +52,15 @@ allow = [
     "Apache-2.0 WITH LLVM-exception",
     "BSD-2-Clause",
     "BSD-3-Clause",
+    # The upstream BZip2 license is permissive and compatible with the crate's
+    # GPL-3.0-only license; ZIP 9 enables it through ppt-rs defaults.
+    "bzip2-1.0.6",
+    # constant_time_eq 0.6 and ppmd-rust declare permissive OR alternatives;
+    # allowing these options is needed for the ZIP 9 dependency graph.
+    "CC0-1.0",
     "GPL-3.0-only",
     "ISC",
+    "MIT-0",
     "MIT",
     "MPL-2.0",
     "Unicode-3.0",
