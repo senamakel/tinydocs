@@ -13,7 +13,7 @@ categories = ["api-bindings"]
 [dependencies]
 # Module loading and typed failure reporting stay host-owned; this is the
 # published host-facing SDK without its native loader.
-tinybus = { version = "0.3.7", default-features = false }
+tinybus = { version = "0.3.8", default-features = false }
 # Shared wire names and payload DTOs.
 tinydocs-bus = { version = "0.2.5", path = "../tinydocs-bus" }
 # The held-output protocol uses base64 chunks and verifies their SHA-256 digest.
