@@ -119,7 +119,7 @@ fn office_parts(
                 "encrypted ZIP or expansion limit exceeded",
             ));
         }
-        let name = part.name();
+        let name = part.name().map_err(failed)?;
         if name.len() > 256 {
             return Err(Error::extraction_failed("ZIP member name limit exceeded"));
         }
@@ -129,10 +129,13 @@ fn office_parts(
             DocumentFormat::Pdf => false,
         };
         if selected {
-            if parts.iter().any(|(existing, _)| existing == name) {
+            if parts
+                .iter()
+                .any(|(existing, _)| existing == name.as_ref())
+            {
                 return Err(Error::extraction_failed("duplicate document part"));
             }
-            parts.push((name.to_owned(), i));
+            parts.push((name.into_owned(), i));
         }
     }
     if matches!(format, DocumentFormat::Pptx | DocumentFormat::Xlsx) {
