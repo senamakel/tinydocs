@@ -74,8 +74,8 @@ fn invalid_utf8_member_name(bytes: &[u8]) -> Vec<u8> {
         .windows(4)
         .position(|window| window == b"PK\x01\x02")
         .expect("fixture contains a central-directory entry");
-    let central_flags = u16::from_le_bytes([malformed[central + 8], malformed[central + 9]])
-        | (1 << 11);
+    let central_flags =
+        u16::from_le_bytes([malformed[central + 8], malformed[central + 9]]) | (1 << 11);
     malformed[central + 8..central + 10].copy_from_slice(&central_flags.to_le_bytes());
     malformed[central + 46] = 0xff;
     malformed

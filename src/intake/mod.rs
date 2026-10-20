@@ -129,10 +129,7 @@ fn office_parts(
             DocumentFormat::Pdf => false,
         };
         if selected {
-            if parts
-                .iter()
-                .any(|(existing, _)| existing == name.as_ref())
-            {
+            if parts.iter().any(|(existing, _)| existing == name.as_ref()) {
                 return Err(Error::extraction_failed("duplicate document part"));
             }
             parts.push((name.into_owned(), i));

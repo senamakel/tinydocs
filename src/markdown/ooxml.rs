@@ -33,9 +33,13 @@ pub(super) fn pptx(bytes: &[u8]) -> Result<String> {
     let mut slides = Vec::new();
     for entry in archive.file_names() {
         let name = entry.map_err(|error| {
-            unreadable(&format!("the deck contains an invalid member name: {error}"))
+            unreadable(&format!(
+                "the deck contains an invalid member name: {error}"
+            ))
         })?;
-        let Some(number) = name.strip_prefix(PREFIX).and_then(|rest| rest.strip_suffix(".xml"))
+        let Some(number) = name
+            .strip_prefix(PREFIX)
+            .and_then(|rest| rest.strip_suffix(".xml"))
         else {
             continue;
         };
