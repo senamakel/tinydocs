@@ -92,7 +92,7 @@ fn extracts_docx_visible_text_and_provenance() {
 }
 
 #[test]
-fn rejects_zip_members_with_invalid_utf8_names() {
+fn cp437_fallback_does_not_mistake_a_non_utf8_name_for_a_docx_part() {
     let bytes = invalid_utf8_member_name(&archive(&[(
         "word/document.xml",
         "<w:document xmlns:w='w'><w:p><w:r><w:t>visible</w:t></w:r></w:p></w:document>",
@@ -100,7 +100,10 @@ fn rejects_zip_members_with_invalid_utf8_names() {
 
     let error = extract(&bytes, &ExtractDocumentSpec::new(DocumentFormat::Docx)).unwrap_err();
 
-    assert!(matches!(error, Error::ExtractionFailed { .. }));
+    let Error::ExtractionFailed { detail } = error else {
+        panic!("unexpected error type");
+    };
+    assert_eq!(detail, "document has no supported parts");
 }
 #[test]
 fn truncates_text_without_splitting_unicode() {

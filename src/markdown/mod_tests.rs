@@ -214,13 +214,17 @@ fn a_deck_reads_its_slides_in_numeric_order() {
 }
 
 #[test]
-fn rejects_pptx_archives_with_invalid_utf8_member_names() {
+fn cp437_fallback_does_not_mistake_a_non_utf8_name_for_a_pptx_slide() {
     let bytes = invalid_utf8_member_name(package(&[(
         "ppt/slides/slide1.xml",
         "<a:p xmlns:a='a'><a:r><a:t>visible</a:t></a:r></a:p>",
     )]));
 
-    assert!(convert("presentation.pptx", &bytes).is_err());
+    let Error::ExtractionFailed { detail } = convert("presentation.pptx", &bytes).unwrap_err()
+    else {
+        panic!("unexpected error type");
+    };
+    assert_eq!(detail, "converting Pptx produced no text");
 }
 
 #[test]
