@@ -24,7 +24,7 @@ ignore = [
     # calls, and `.pptx` synthesis never reaches it.
     #
     # Plan: it leaves with one line. ppt-rs's `pdf-native` default feature is
-    # what pulls `pdfrs`, but ppt-rs 0.2.24 does not compile with default
+    # what pulls `pdfrs`, but ppt-rs 0.3.0 does not compile with default
     # features off — `src/export/slide_render.rs` has an unguarded
     # `use pdfrs::...`. The moment that cfg is fixed upstream,
     # `default-features = false` drops this crate, `syntect`, `bincode` and
@@ -52,10 +52,6 @@ allow = [
     "Apache-2.0 WITH LLVM-exception",
     "BSD-2-Clause",
     "BSD-3-Clause",
-    # constant_time_eq 0.1.5, via ppt-rs -> zip 0.6.6. A public-domain
-    # dedication — strictly more permissive than the rest of this list, and it
-    # imposes no obligation on a GPL-3.0-only crate.
-    "CC0-1.0",
     "GPL-3.0-only",
     "ISC",
     "MIT",
@@ -76,3 +72,7 @@ deny = []
 unknown-registry = "deny"
 unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = [
+    "https://github.com/bokuweb/docx-rs",
+    "https://github.com/yingkitw/ppt-rs",
+]
