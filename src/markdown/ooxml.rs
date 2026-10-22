@@ -10,6 +10,10 @@ use zip::ZipArchive;
 use super::{MAX_DECOMPRESSED_BYTES, unreadable};
 use crate::Result;
 
+// ZIP general-purpose bit 11 marks UTF-8 names. Inspect it through zip's
+// stable flags value instead of naming its unstable flag enum.
+const UTF8_FILENAME_FLAG: u16 = 1 << 11;
+
 /// The body text of a Word document.
 ///
 /// `w:p` is a paragraph and `w:t` a run of text inside it: joining runs
@@ -32,11 +36,7 @@ pub(super) fn pptx(bytes: &[u8]) -> Result<String> {
     for index in 0..archive.len() {
         let file = archive.by_index(index).map_err(invalid_member_name)?;
         let raw_name = file.name_raw();
-        if file
-            .flags()
-            .matching(zip::unstable::format::flags::ZipFlags::LanguageEncoding)
-            && str::from_utf8(raw_name).is_err()
-        {
+        if file.flags().as_u16() & UTF8_FILENAME_FLAG != 0 && str::from_utf8(raw_name).is_err() {
             // ZIP 9 decodes malformed UTF-8 lossily. Detect it from the raw
             // bytes first, but ignore it when the member is unrelated to slides.
             if raw_name.starts_with(b"ppt/slides/slide") {

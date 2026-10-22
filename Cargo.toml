@@ -37,7 +37,7 @@ version = "0.2.5"
 tinydocs-bus = { version = "0.2.4", path = "crates/tinydocs-bus" }
 # OOXML `.docx` synthesis. Optional: exclusive to the `docx` feature so a host
 # that only needs extraction does not pull the writer stack.
-docx-rs = { git = "https://github.com/bokuweb/docx-rs", rev = "71df69c82ea14d777ab0c0e7236b08ffbacef31d", version = "0.4.23", optional = true }
+docx-rs = { version = "0.4", optional = true }
 # OOXML `.pptx` synthesis. Optional: exclusive to the `pptx` feature.
 #
 # Default features are ON, and not by choice. `pdf-native` exists to export a
@@ -52,7 +52,7 @@ docx-rs = { git = "https://github.com/bokuweb/docx-rs", rev = "71df69c82ea14d777
 # cfg: `default-features = false` then drops `pdfrs`, `syntect`, `yaml-rust`,
 # `bincode` and `pulldown-cmark` in one line (verified locally — the resolve
 # succeeds, only the build fails).
-ppt-rs = { git = "https://github.com/yingkitw/ppt-rs", rev = "8ef93521bc0c83aee35746c76aef8251f7d0e60a", version = "0.3.0", optional = true }
+ppt-rs = { version = "0.2", optional = true }
 # `.pdf` text extraction. Optional: exclusive to the `pdf` feature. It brings a
 # font and PostScript parsing stack (`lopdf`, CFF/Type1/CMap parsers) that only
 # the extraction path needs, so a host that never reads a PDF should not carry
