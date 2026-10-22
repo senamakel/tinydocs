@@ -19,6 +19,30 @@ fn package(parts: &[(&str, &str)]) -> Vec<u8> {
     buffer.into_inner()
 }
 
+fn invalid_utf8_member_name(mut bytes: Vec<u8>, member: &str) -> Vec<u8> {
+    let mut positions = bytes
+        .windows(member.len())
+        .enumerate()
+        .filter_map(|(index, window)| (window == member.as_bytes()).then_some(index));
+    let local_name = positions.next().unwrap();
+    let central_name = positions.next().unwrap();
+    assert!(positions.next().is_none());
+
+    // Keep the Office path prefix intact so the malformed member is still
+    // recognizably a slide, then corrupt its final name byte in both headers.
+    bytes[local_name + member.len() - 1] = 0xff;
+    bytes[central_name + member.len() - 1] = 0xff;
+    let local_header = local_name - 30;
+    let local_flags =
+        u16::from_le_bytes([bytes[local_header + 6], bytes[local_header + 7]]) | (1 << 11);
+    bytes[local_header + 6..local_header + 8].copy_from_slice(&local_flags.to_le_bytes());
+
+    let central = central_name - 46;
+    let central_flags = u16::from_le_bytes([bytes[central + 8], bytes[central + 9]]) | (1 << 11);
+    bytes[central + 8..central + 10].copy_from_slice(&central_flags.to_le_bytes());
+    bytes
+}
+
 /// A Word document whose body is `paragraphs`, each a list of text runs.
 fn docx(paragraphs: &[&[&str]]) -> Vec<u8> {
     let mut body = String::new();
@@ -196,6 +220,31 @@ fn a_deck_reads_its_slides_in_numeric_order() {
     let bytes = pptx(&[(10, "Tenth"), (2, "Second"), (1, "First")]);
     let converted = convert("deck.pptx", &bytes).unwrap();
     assert_eq!(converted, "First\n\nSecond\n\nTenth");
+}
+
+#[test]
+fn pptx_reports_malformed_utf8_slide_names_instead_of_dropping_slides() {
+    let bytes = invalid_utf8_member_name(
+        pptx(&[(1, "malformed"), (2, "visible")]),
+        "ppt/slides/slide1.xml",
+    );
+    let error = convert("presentation.pptx", &bytes).unwrap_err();
+    assert!(error.to_string().contains("invalid member name"), "{error}");
+}
+
+#[test]
+fn pptx_skips_an_invalid_unrelated_member_and_keeps_valid_slides() {
+    let bytes = invalid_utf8_member_name(
+        package(&[
+            ("docProps/core.xml", "<metadata>ignored</metadata>"),
+            (
+                "ppt/slides/slide1.xml",
+                "<a:p xmlns:a='a'><a:r><a:t>visible</a:t></a:r></a:p>",
+            ),
+        ]),
+        "docProps/core.xml",
+    );
+    assert_eq!(convert("presentation.pptx", &bytes).unwrap(), "visible");
 }
 
 #[test]
