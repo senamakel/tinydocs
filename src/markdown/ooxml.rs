@@ -1,7 +1,7 @@
 //! Word documents and `PowerPoint` decks: zip archives of XML, walked directly.
 
-use std::io::{Cursor, Read, Seek};
 use std::borrow::Cow;
+use std::io::{Cursor, Read, Seek};
 
 use quick_xml::events::Event;
 use zip::ZipArchive;
@@ -41,7 +41,9 @@ pub(super) fn ordered_slide_names<'a>(
     let mut slides = Vec::new();
     for entry in entries {
         let name = entry.map_err(|error| {
-            unreadable(&format!("the deck contains an invalid member name: {error}"))
+            unreadable(&format!(
+                "the deck contains an invalid member name: {error}"
+            ))
         })?;
         let Some(number) = name
             .strip_prefix(PREFIX)

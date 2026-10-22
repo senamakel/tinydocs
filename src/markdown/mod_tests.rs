@@ -202,9 +202,9 @@ fn a_deck_reads_its_slides_in_numeric_order() {
 fn pptx_slide_name_decoding_errors_are_reported_instead_of_dropped() {
     let entries = [
         Ok(std::borrow::Cow::Borrowed("ppt/slides/slide1.xml")),
-        Err(zip::result::ZipError::InvalidArchive(std::borrow::Cow::Borrowed(
-            "invalid UTF-8 member name",
-        ))),
+        Err(zip::result::ZipError::InvalidArchive(
+            std::borrow::Cow::Borrowed("invalid UTF-8 member name"),
+        )),
     ];
     let error = super::ooxml::ordered_slide_names(entries.into_iter()).unwrap_err();
     assert!(error.to_string().contains("invalid member name"), "{error}");
