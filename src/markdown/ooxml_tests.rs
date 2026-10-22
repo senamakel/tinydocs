@@ -1,3 +1,5 @@
+//! Tests for Markdown extraction from OOXML document archives.
+
 use super::{invalid_member_name, xml_text};
 
 #[test]
