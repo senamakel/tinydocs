@@ -37,7 +37,7 @@ version = "0.2.5"
 tinydocs-bus = { version = "0.2.4", path = "crates/tinydocs-bus" }
 # OOXML `.docx` synthesis. Optional: exclusive to the `docx` feature so a host
 # that only needs extraction does not pull the writer stack.
-docx-rs = { version = "0.4", optional = true }
+docx-rs = { git = "https://github.com/bokuweb/docx-rs", rev = "71df69c82ea14d777ab0c0e7236b08ffbacef31d", version = "0.4.23", optional = true }
 # OOXML `.pptx` synthesis. Optional: exclusive to the `pptx` feature.
 #
 # Default features are ON, and not by choice. `pdf-native` exists to export a

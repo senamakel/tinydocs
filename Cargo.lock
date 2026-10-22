@@ -480,9 +480,8 @@ dependencies = [
 
 [[package]]
 name = "docx-rs"
-version = "0.4.22"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7fdf00e8af6d0b3e92d4bbf9b76f773d8b84ea80f310324ad16cbdc2e653e02c"
+version = "0.4.23"
+source = "git+https://github.com/bokuweb/docx-rs?rev=71df69c82ea14d777ab0c0e7236b08ffbacef31d#71df69c82ea14d777ab0c0e7236b08ffbacef31d"
 dependencies = [
  "base64 0.22.1",
  "crc32fast",
@@ -492,7 +491,7 @@ dependencies = [
  "serde_json",
  "smallvec",
  "thiserror",
- "zip 8.6.0",
+ "zip 9.0.5",
 ]
 
 [[package]]
@@ -2589,20 +2588,6 @@ dependencies = [
  "indexmap",
  "memchr",
  "thiserror",
- "zopfli",
-]
-
-[[package]]
-name = "zip"
-version = "8.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2d04a6b5381502aa6087c94c669499eb1602eb9c5e8198e534de571f7154809b"
-dependencies = [
- "crc32fast",
- "flate2",
- "indexmap",
- "memchr",
- "typed-path",
  "zopfli",
 ]
 
