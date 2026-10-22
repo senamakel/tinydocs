@@ -19,5 +19,9 @@ fn malformed_xml_keeps_text_read_before_the_error() {
 #[test]
 fn invalid_member_name_errors_keep_archive_context() {
     let error = invalid_member_name(zip::result::ZipError::FileNotFound);
-    assert!(error.to_string().contains("deck contains an invalid member name"));
+    assert!(
+        error
+            .to_string()
+            .contains("deck contains an invalid member name")
+    );
 }

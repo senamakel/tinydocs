@@ -87,7 +87,9 @@ fn declared_uncompressed<R: Read + Seek>(archive: &mut ZipArchive<R>) -> Option<
 }
 
 fn invalid_member_name(error: impl Display) -> crate::Error {
-    unreadable(&format!("the deck contains an invalid member name: {error}"))
+    unreadable(&format!(
+        "the deck contains an invalid member name: {error}"
+    ))
 }
 
 /// Reads the named parts in order and pulls their `text_tag` runs, breaking a
