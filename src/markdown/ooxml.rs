@@ -159,3 +159,7 @@ fn xml_text(xml: &str, paragraph_tag: &str, text_tag: &str) -> String {
     }
     out
 }
+
+#[cfg(test)]
+#[path = "ooxml_tests.rs"]
+mod tests;

@@ -19,7 +19,7 @@ fn package(parts: &[(&str, &str)]) -> Vec<u8> {
     buffer.into_inner()
 }
 
-fn invalid_utf8_member_name(mut bytes: Vec<u8>, member: &str, language_encoding: bool) -> Vec<u8> {
+fn invalid_utf8_member_name(mut bytes: Vec<u8>, member: &str) -> Vec<u8> {
     let mut positions = bytes
         .windows(member.len())
         .enumerate()
@@ -33,21 +33,12 @@ fn invalid_utf8_member_name(mut bytes: Vec<u8>, member: &str, language_encoding:
     bytes[local_name + member.len() - 1] = 0xff;
     bytes[central_name + member.len() - 1] = 0xff;
     let local_header = local_name - 30;
-    let mut local_flags = u16::from_le_bytes([bytes[local_header + 6], bytes[local_header + 7]]);
-    if language_encoding {
-        local_flags |= 1 << 11;
-    } else {
-        local_flags &= !(1 << 11);
-    }
+    let local_flags =
+        u16::from_le_bytes([bytes[local_header + 6], bytes[local_header + 7]]) | (1 << 11);
     bytes[local_header + 6..local_header + 8].copy_from_slice(&local_flags.to_le_bytes());
 
     let central = central_name - 46;
-    let mut central_flags = u16::from_le_bytes([bytes[central + 8], bytes[central + 9]]);
-    if language_encoding {
-        central_flags |= 1 << 11;
-    } else {
-        central_flags &= !(1 << 11);
-    }
+    let central_flags = u16::from_le_bytes([bytes[central + 8], bytes[central + 9]]) | (1 << 11);
     bytes[central + 8..central + 10].copy_from_slice(&central_flags.to_le_bytes());
     bytes
 }
@@ -233,14 +224,7 @@ fn a_deck_reads_its_slides_in_numeric_order() {
 
 #[test]
 fn pptx_reports_malformed_utf8_slide_names_instead_of_dropping_slides() {
-    let bytes = invalid_utf8_member_name(pptx(&[(1, "visible")]), "ppt/slides/slide1.xml", true);
-    let error = convert("presentation.pptx", &bytes).unwrap_err();
-    assert!(error.to_string().contains("invalid member name"), "{error}");
-}
-
-#[test]
-fn pptx_reports_invalid_name_encoding_without_the_utf8_flag() {
-    let bytes = invalid_utf8_member_name(pptx(&[(1, "visible")]), "ppt/slides/slide1.xml", false);
+    let bytes = invalid_utf8_member_name(pptx(&[(1, "visible")]), "ppt/slides/slide1.xml");
     let error = convert("presentation.pptx", &bytes).unwrap_err();
     assert!(error.to_string().contains("invalid member name"), "{error}");
 }
@@ -256,7 +240,6 @@ fn pptx_skips_an_invalid_unrelated_member_and_keeps_valid_slides() {
             ),
         ]),
         "docProps/core.xml",
-        true,
     );
     assert_eq!(convert("presentation.pptx", &bytes).unwrap(), "visible");
 }
