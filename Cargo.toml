@@ -60,7 +60,7 @@ ppt-rs = { version = "0.2", optional = true }
 pdf-extract = { version = "0.12", optional = true }
 
 # Bounded OOXML intake reads only selected XML parts, never extracts files.
-zip = { version = "8", default-features = false, features = ["deflate"], optional = true }
+zip = { version = "9", default-features = false, features = ["deflate"], optional = true }
 # Streaming XML events avoid building attacker-controlled DOM trees.
 quick-xml = { version = "0.41", optional = true }
 # Workbook row conversion for document-memory Markdown; implementation only.
