@@ -1,6 +1,28 @@
 //! Tests for Markdown extraction from OOXML document archives.
 
-use super::{invalid_member_name, xml_text};
+use super::{invalid_member_name, pptx, xml_text};
+use std::io::Write;
+
+fn deck_with_encrypted_unrelated_part() -> Vec<u8> {
+    let mut archive = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    archive
+        .start_file(
+            "ppt/notesSlides/notesSlide1.xml",
+            zip::write::SimpleFileOptions::default().with_deprecated_encryption(b"password"),
+        )
+        .unwrap();
+    archive.write_all(b"encrypted notes").unwrap();
+    archive
+        .start_file(
+            "ppt/slides/slide1.xml",
+            zip::write::SimpleFileOptions::default(),
+        )
+        .unwrap();
+    archive
+        .write_all(b"<a:p><a:t>visible slide</a:t></a:p>")
+        .unwrap();
+    archive.finish().unwrap().into_inner()
+}
 
 #[test]
 fn unknown_entities_do_not_add_text() {
@@ -25,5 +47,13 @@ fn invalid_member_name_errors_keep_archive_context() {
         error
             .to_string()
             .contains("deck contains an invalid member name")
+    );
+}
+
+#[test]
+fn encrypted_unrelated_parts_do_not_hide_valid_slides() {
+    assert_eq!(
+        pptx(&deck_with_encrypted_unrelated_part()).unwrap(),
+        "visible slide\n\n"
     );
 }

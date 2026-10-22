@@ -34,7 +34,7 @@ pub(super) fn pptx(bytes: &[u8]) -> Result<String> {
     let mut archive = open(bytes, "deck")?;
     let mut slides = Vec::new();
     for index in 0..archive.len() {
-        let file = archive.by_index(index).map_err(invalid_member_name)?;
+        let file = archive.by_index_data(index).map_err(invalid_member_name)?;
         let raw_name = file.name_raw();
         if file.flags().as_u16() & UTF8_FILENAME_FLAG != 0 && str::from_utf8(raw_name).is_err() {
             // ZIP 9 decodes malformed UTF-8 lossily. Detect it from the raw
@@ -80,7 +80,7 @@ pub(super) fn open<'a>(bytes: &'a [u8], noun: &str) -> Result<ZipArchive<Cursor<
 fn declared_uncompressed<R: Read + Seek>(archive: &mut ZipArchive<R>) -> Option<u64> {
     (0..archive.len()).try_fold(0u64, |total, index| {
         archive
-            .by_index(index)
+            .by_index_data(index)
             .ok()
             .map(|file| total.saturating_add(file.size()))
     })
