@@ -52,6 +52,8 @@ allow = [
     "Apache-2.0 WITH LLVM-exception",
     "BSD-2-Clause",
     "BSD-3-Clause",
+    # ZIP 9's Rust-native bzip2 implementation uses the upstream bzip2 license.
+    "bzip2-1.0.6",
     # constant_time_eq 0.1.5, via ppt-rs -> zip 0.6.6. A public-domain
     # dedication — strictly more permissive than the rest of this list, and it
     # imposes no obligation on a GPL-3.0-only crate.
