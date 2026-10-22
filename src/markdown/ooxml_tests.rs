@@ -4,27 +4,19 @@ use super::{invalid_member_name, pptx, xml_text};
 use std::io::Write;
 use zip::unstable::write::FileOptionsExt;
 
-fn deck_with_encrypted_unrelated_part() -> Vec<u8> {
+fn deck_with_encrypted_unrelated_part() -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     let mut archive = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
-    archive
-        .start_file(
-            "ppt/notesSlides/notesSlide1.xml",
-            zip::write::SimpleFileOptions::default()
-                .with_deprecated_encryption(b"password")
-                .unwrap(),
-        )
-        .unwrap();
-    archive.write_all(b"encrypted notes").unwrap();
-    archive
-        .start_file(
-            "ppt/slides/slide1.xml",
-            zip::write::SimpleFileOptions::default(),
-        )
-        .unwrap();
-    archive
-        .write_all(b"<a:p><a:t>visible slide</a:t></a:p>")
-        .unwrap();
-    archive.finish().unwrap().into_inner()
+    archive.start_file(
+        "ppt/notesSlides/notesSlide1.xml",
+        zip::write::SimpleFileOptions::default().with_deprecated_encryption(b"password")?,
+    )?;
+    archive.write_all(b"encrypted notes")?;
+    archive.start_file(
+        "ppt/slides/slide1.xml",
+        zip::write::SimpleFileOptions::default(),
+    )?;
+    archive.write_all(b"<a:p><a:t>visible slide</a:t></a:p>")?;
+    Ok(archive.finish()?.into_inner())
 }
 
 #[test]
@@ -54,9 +46,10 @@ fn invalid_member_name_errors_keep_archive_context() {
 }
 
 #[test]
-fn encrypted_unrelated_parts_do_not_hide_valid_slides() {
+fn encrypted_unrelated_parts_do_not_hide_valid_slides() -> Result<(), Box<dyn std::error::Error>> {
     assert_eq!(
-        pptx(&deck_with_encrypted_unrelated_part()).unwrap(),
+        pptx(&deck_with_encrypted_unrelated_part()?)?,
         "visible slide\n\n"
     );
+    Ok(())
 }
