@@ -2,13 +2,16 @@
 
 use super::{invalid_member_name, pptx, xml_text};
 use std::io::Write;
+use zip::unstable::write::FileOptionsExt;
 
 fn deck_with_encrypted_unrelated_part() -> Vec<u8> {
     let mut archive = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
     archive
         .start_file(
             "ppt/notesSlides/notesSlide1.xml",
-            zip::write::SimpleFileOptions::default().with_deprecated_encryption(b"password"),
+            zip::write::SimpleFileOptions::default()
+                .with_deprecated_encryption(b"password")
+                .unwrap(),
         )
         .unwrap();
     archive.write_all(b"encrypted notes").unwrap();
