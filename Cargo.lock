@@ -1985,7 +1985,6 @@ dependencies = [
  "quick-xml 0.41.0",
  "serde_json",
  "tinydocs-bus",
- "zip 8.6.0",
  "zip 9.0.5",
 ]
 
@@ -2013,7 +2012,7 @@ dependencies = [
  "tinydocs",
  "tinydocs-bus",
  "tokio",
- "zip 8.6.0",
+ "zip 9.0.5",
 ]
 
 [[package]]
