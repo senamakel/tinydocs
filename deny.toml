@@ -76,3 +76,9 @@ deny = []
 unknown-registry = "deny"
 unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = [
+    # ZIP 9-compatible document writers, pinned to audited upstream commits
+    # until releases are published to crates.io.
+    "https://github.com/bokuweb/docx-rs",
+    "https://github.com/yingkitw/ppt-rs",
+]
