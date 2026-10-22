@@ -1,7 +1,7 @@
 //! Word documents and `PowerPoint` decks: zip archives of XML, walked directly.
 
-use std::borrow::Cow;
 use std::io::{Cursor, Read, Seek};
+use std::str;
 
 use quick_xml::events::Event;
 use zip::ZipArchive;
@@ -27,37 +27,43 @@ pub(super) fn docx(bytes: &[u8]) -> Result<String> {
 /// The text of every slide in a deck, in slide order.
 pub(super) fn pptx(bytes: &[u8]) -> Result<String> {
     let mut archive = open(bytes, "deck")?;
-    let slides = ordered_slide_names(archive.file_names())?;
-    let names: Vec<&str> = slides.iter().map(String::as_str).collect();
-    Ok(read_parts(&mut archive, &names, "a:p", "a:t"))
-}
-
-/// Decodes and numerically orders PPTX slide paths, refusing an archive whose
-/// member names cannot be decoded rather than silently returning partial text.
-pub(super) fn ordered_slide_names<'a>(
-    entries: impl Iterator<Item = zip::result::ZipResult<Cow<'a, str>>>,
-) -> Result<Vec<String>> {
-    const PREFIX: &str = "ppt/slides/slide";
     let mut slides = Vec::new();
-    for entry in entries {
-        let name = entry.map_err(|error| {
+    for index in 0..archive.len() {
+        let file = archive.by_index(index).map_err(|error| {
             unreadable(&format!(
                 "the deck contains an invalid member name: {error}"
             ))
         })?;
-        let Some(number) = name
-            .strip_prefix(PREFIX)
+        let raw_name = file.name_raw();
+        if file
+            .flags()
+            .matching(zip::unstable::format::flags::ZipFlags::LanguageEncoding)
+            && str::from_utf8(raw_name).is_err()
+        {
+            // ZIP 9 decodes malformed UTF-8 lossily. Detect it from the raw
+            // bytes first, but ignore it when the member is unrelated to slides.
+            if raw_name.starts_with(b"ppt/slides/slide") {
+                return Err(unreadable("the deck contains an invalid member name"));
+            }
+            continue;
+        }
+        let name = file.name().map_err(|error| {
+            unreadable(&format!(
+                "the deck contains an invalid member name: {error}"
+            ))
+        })?;
+        if let Some(number) = name
+            .strip_prefix("ppt/slides/slide")
             .and_then(|rest| rest.strip_suffix(".xml"))
-        else {
-            continue;
-        };
-        let Ok(number) = number.parse::<u32>() else {
-            continue;
-        };
-        slides.push((number, name.into_owned()));
+            .and_then(|number| number.parse::<u32>().ok())
+        {
+            slides.push((number, name.into_owned()));
+        }
     }
     slides.sort_unstable();
-    Ok(slides.into_iter().map(|(_, name)| name).collect())
+    let slides: Vec<String> = slides.into_iter().map(|(_, name)| name).collect();
+    let names: Vec<&str> = slides.iter().map(String::as_str).collect();
+    Ok(read_parts(&mut archive, &names, "a:p", "a:t"))
 }
 
 /// Opens an Office archive, refusing one whose declared expansion exceeds
