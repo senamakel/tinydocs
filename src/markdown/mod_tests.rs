@@ -224,7 +224,10 @@ fn a_deck_reads_its_slides_in_numeric_order() {
 
 #[test]
 fn pptx_reports_malformed_utf8_slide_names_instead_of_dropping_slides() {
-    let bytes = invalid_utf8_member_name(pptx(&[(1, "visible")]), "ppt/slides/slide1.xml");
+    let bytes = invalid_utf8_member_name(
+        pptx(&[(1, "malformed"), (2, "visible")]),
+        "ppt/slides/slide1.xml",
+    );
     let error = convert("presentation.pptx", &bytes).unwrap_err();
     assert!(error.to_string().contains("invalid member name"), "{error}");
 }
