@@ -1,6 +1,7 @@
 //! Word documents and `PowerPoint` decks: zip archives of XML, walked directly.
 
 use std::io::{Cursor, Read, Seek};
+use std::borrow::Cow;
 
 use quick_xml::events::Event;
 use zip::ZipArchive;
@@ -25,13 +26,20 @@ pub(super) fn docx(bytes: &[u8]) -> Result<String> {
 
 /// The text of every slide in a deck, in slide order.
 pub(super) fn pptx(bytes: &[u8]) -> Result<String> {
-    const PREFIX: &str = "ppt/slides/slide";
-
     let mut archive = open(bytes, "deck")?;
-    // Numeric, not lexicographic: `slide10.xml` sorts before `slide2.xml` as
-    // a string.
+    let slides = ordered_slide_names(archive.file_names())?;
+    let names: Vec<&str> = slides.iter().map(String::as_str).collect();
+    Ok(read_parts(&mut archive, &names, "a:p", "a:t"))
+}
+
+/// Decodes and numerically orders PPTX slide paths, refusing an archive whose
+/// member names cannot be decoded rather than silently returning partial text.
+fn ordered_slide_names<'a>(
+    entries: impl Iterator<Item = zip::result::ZipResult<Cow<'a, str>>>,
+) -> Result<Vec<String>> {
+    const PREFIX: &str = "ppt/slides/slide";
     let mut slides = Vec::new();
-    for entry in archive.file_names() {
+    for entry in entries {
         let name = entry.map_err(|error| {
             unreadable(&format!("the deck contains an invalid member name: {error}"))
         })?;
@@ -47,8 +55,7 @@ pub(super) fn pptx(bytes: &[u8]) -> Result<String> {
         slides.push((number, name.into_owned()));
     }
     slides.sort_unstable();
-    let names: Vec<&str> = slides.iter().map(|(_, name)| name.as_str()).collect();
-    Ok(read_parts(&mut archive, &names, "a:p", "a:t"))
+    Ok(slides.into_iter().map(|(_, name)| name).collect())
 }
 
 /// Opens an Office archive, refusing one whose declared expansion exceeds
