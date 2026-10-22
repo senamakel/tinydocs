@@ -33,7 +33,6 @@ pub(super) fn pptx(bytes: &[u8]) -> Result<String> {
     let mut slides: Vec<(u32, String)> = archive
         .file_names()
         .filter_map(|name| {
-            let name = name.ok()?;
             let number = name.strip_prefix(PREFIX)?.strip_suffix(".xml")?;
             Some((number.parse().ok()?, name.to_string()))
         })
