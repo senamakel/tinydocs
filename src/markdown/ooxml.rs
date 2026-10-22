@@ -34,7 +34,7 @@ pub(super) fn pptx(bytes: &[u8]) -> Result<String> {
 
 /// Decodes and numerically orders PPTX slide paths, refusing an archive whose
 /// member names cannot be decoded rather than silently returning partial text.
-fn ordered_slide_names<'a>(
+pub(super) fn ordered_slide_names<'a>(
     entries: impl Iterator<Item = zip::result::ZipResult<Cow<'a, str>>>,
 ) -> Result<Vec<String>> {
     const PREFIX: &str = "ppt/slides/slide";
