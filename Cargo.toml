@@ -52,7 +52,7 @@ docx-rs = { git = "https://github.com/bokuweb/docx-rs", rev = "71df69c82ea14d777
 # cfg: `default-features = false` then drops `pdfrs`, `syntect`, `yaml-rust`,
 # `bincode` and `pulldown-cmark` in one line (verified locally — the resolve
 # succeeds, only the build fails).
-ppt-rs = { version = "0.2", optional = true }
+ppt-rs = { git = "https://github.com/yingkitw/ppt-rs", rev = "003fcb5edc18cd80b436694dd5d839c61f6064aa", version = "0.3.0", optional = true }
 # `.pdf` text extraction. Optional: exclusive to the `pdf` feature. It brings a
 # font and PostScript parsing stack (`lopdf`, CFF/Type1/CMap parsers) that only
 # the extraction path needs, so a host that never reads a PDF should not carry
