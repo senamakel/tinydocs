@@ -1,5 +1,6 @@
 //! Word documents and `PowerPoint` decks: zip archives of XML, walked directly.
 
+use std::fmt::Display;
 use std::io::{Cursor, Read, Seek};
 use std::str;
 
@@ -29,11 +30,7 @@ pub(super) fn pptx(bytes: &[u8]) -> Result<String> {
     let mut archive = open(bytes, "deck")?;
     let mut slides = Vec::new();
     for index in 0..archive.len() {
-        let file = archive.by_index(index).map_err(|error| {
-            unreadable(&format!(
-                "the deck contains an invalid member name: {error}"
-            ))
-        })?;
+        let file = archive.by_index(index).map_err(invalid_member_name)?;
         let raw_name = file.name_raw();
         if file
             .flags()
@@ -47,11 +44,7 @@ pub(super) fn pptx(bytes: &[u8]) -> Result<String> {
             }
             continue;
         }
-        let name = file.name().map_err(|error| {
-            unreadable(&format!(
-                "the deck contains an invalid member name: {error}"
-            ))
-        })?;
+        let name = file.name().map_err(invalid_member_name)?;
         if let Some(number) = name
             .strip_prefix("ppt/slides/slide")
             .and_then(|rest| rest.strip_suffix(".xml"))
@@ -91,6 +84,10 @@ fn declared_uncompressed<R: Read + Seek>(archive: &mut ZipArchive<R>) -> Option<
             .ok()
             .map(|file| total.saturating_add(file.size()))
     })
+}
+
+fn invalid_member_name(error: impl Display) -> crate::Error {
+    unreadable(&format!("the deck contains an invalid member name: {error}"))
 }
 
 /// Reads the named parts in order and pulls their `text_tag` runs, breaking a
